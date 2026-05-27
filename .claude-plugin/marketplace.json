@@ -1,0 +1,13 @@
+{
+  "name": "soong",
+  "owner": {
+    "name": "konvoulgaris"
+  },
+  "plugins": [
+    {
+      "name": "soong",
+      "source": "./plugins/soong",
+      "description": "Personal archive of reusable Claude skills."
+    }
+  ]
+}
