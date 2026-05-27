@@ -46,12 +46,28 @@ The title and body MUST NOT contain a generated-by footer. Specifically, no:
 - `Co-Authored-By: ...`
 - the 🤖 robot emoji
 
+## Arguments
+
+The skill accepts an optional argument string:
+
+- `--non-interactive` (alias `--skip-interactive`) — do not pause for confirmation.
+  Draft the title and description from the diff and run the `gh` command directly.
+  Resolve the Notion ticket only if it can be determined without asking the user
+  (e.g. from an existing PR record or an unambiguous MCP match); otherwise omit it
+  rather than prompting. Use this when another skill (e.g. `merge`) invokes
+  `manage-pr` as an automated finishing step.
+
+When no argument is given, behave interactively: surface the drafted title and
+description and let the user adjust before running `gh`.
+
 ## Steps
 
 1. Inspect the branch: `git log --oneline <base>..HEAD` and `git diff <base>...HEAD`
    so the title and description reflect **all** commits, not just the latest.
 2. Draft a Conventional Commit title and a short prose description following the
-   rules above. Add a Notion ticket suffix only if one genuinely applies.
+   rules above. Add a Notion ticket suffix only if one genuinely applies. Unless
+   `--non-interactive` was passed, show the draft to the user and let them adjust
+   before continuing.
 3. Run `gh pr create` (or `gh pr edit`) passing the title and body via a HEREDOC.
 4. If the PR-guard hook denies the command, read its reason, fix the title or body,
    and retry — do not bypass the hook.

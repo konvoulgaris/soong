@@ -49,6 +49,11 @@ Track these as todos and do them in order.
 7. `git add` the resolved files, then `git commit --no-edit` to keep the merge message.
 8. If you created a stash in step 1, `git stash pop` now.
 9. `git push` (normal push — a merge commit or fast-forward needs no force).
+10. Check for an open PR on this branch: `gh pr view --json number -q .number`. If one
+    exists, a merge is a natural finishing step, so use the `manage-pr` skill to refresh
+    the PR title and description — invoke it with `--non-interactive` so it drafts and
+    updates the PR without pausing for confirmation. If no PR exists, skip this step
+    silently.
 
 ## Rules
 
