@@ -22,7 +22,7 @@ if printf '%s' "$cmd" | grep -qiE 'generated with|co-authored-by|🤖'; then
 fi
 
 if [ ${#reasons[@]} -gt 0 ]; then
-  printf '%s' "${reasons[*]} Follow the manage-pr skill to fix the title and description, then retry." \
+  printf '%s' "${reasons[*]} Invoke the soong write-pr skill, which defines these conventions, to fix the title and description, then retry." \
     | jq -Rs '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:.}}'
   exit 0
 fi
