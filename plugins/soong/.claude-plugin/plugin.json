@@ -4,6 +4,5 @@
   "description": "Personal archive of reusable Claude skills.",
   "author": {
     "name": "konvoulgaris"
-  },
-  "hooks": "./hooks/hooks.json"
+  }
 }
