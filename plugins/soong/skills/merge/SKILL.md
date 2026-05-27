@@ -1,9 +1,9 @@
 ---
-name: merge-back
-description: Merge a base branch back into the current feature branch and push the result, resolving conflicts file-by-file. Use when the user asks to "merge back", catch a feature branch up with its base, or pull base-branch changes into the current branch. "Base" most likely means the branch the feature was cut from or the PR's base branch, not necessarily a branch literally named "development".
+name: merge
+description: Merge a base branch into the current feature branch and push the result, resolving conflicts file-by-file. Use when the user asks to "merge", "merge back", catch a feature branch up with its base, or pull base-branch changes into the current branch. "Base" most likely means the branch the feature was cut from or the PR's base branch, not necessarily a branch literally named "development".
 ---
 
-# merge-back
+# merge
 
 Merge the **base branch** into the current feature branch and push. "Base" almost
 always means the branch this feature was cut from or the PR's base branch — resolve
@@ -33,7 +33,7 @@ project documents.
 Track these as todos and do them in order.
 
 1. `git status`. If the working tree is dirty, stash everything (including untracked):
-   `git stash push -u -m "pre-merge-back"`. Note that a stash was created so you pop it later.
+   `git stash push -u -m "pre-merge"`. Note that a stash was created so you pop it later.
 2. `git fetch origin <base>`.
 3. `git merge origin/<base> --no-edit`.
 4. If conflicts: resolve each conflicted file by reading **both** sides and keeping
