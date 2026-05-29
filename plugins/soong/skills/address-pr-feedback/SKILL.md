@@ -58,8 +58,10 @@ Track the threads as todos and go through them **one at a time, in order**. For 
 4. Wait for the user's input. Do not move on until they decide.
 5. If the decision involves a code change, **make the change now**, then draft a reply
    that references what you changed. Otherwise just draft the reply.
-6. Show the drafted reply, get the user's sign-off (or edit it), and store it against
-   this thread's comment id. Mark whether this thread involved a code change, so you
+6. Build the reply per the reply-style rules and store it as a draft against this
+   thread's comment id. Do not ask the user whether to tighten or edit it. Do not ask
+   whether to respond now or keep it as a draft. The reply always stays a draft until
+   the batch post at the end. Mark whether this thread involved a code change, so you
    can attach the commit link when posting. Do **not** post yet.
 
 ## Reply style
@@ -79,7 +81,7 @@ do trick.
 
 ## Post at the end
 
-Once every unresolved thread has an approved reply (or was explicitly skipped):
+Once every unresolved thread has a drafted reply (or was explicitly skipped):
 
 1. If any thread involved a code change, commit and push the work first, so the commit
    exists on the remote before you link it. Get the commit URL for the change:
@@ -104,8 +106,10 @@ asks. Leave that to the reviewer.
 - Always offer options and a recommendation; never just pick an action silently.
 - Make the agreed code change before drafting the reply that describes it, so the
   reply is accurate.
-- Never post a reply before the user has signed off on it. Post all replies only at
-  the end.
+- Build the reply from the reviewer's point and the reply-style rules. Do not prompt
+  the user to tighten, edit, or sign off on it, and do not ask whether to respond now.
+  Every reply stays a draft.
+- Post all replies only at the end, never before.
 - Only touch unresolved threads. Do not reply on or reopen resolved ones.
 - Never resolve or dismiss a reviewer's thread on their behalf unless asked.
 - If a code change is large or risky, flag it and confirm scope before editing rather
