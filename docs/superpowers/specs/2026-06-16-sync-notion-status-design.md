@@ -203,7 +203,9 @@ stories) does not, and the page stays `backlog`.
    moved. Fetch each PR's title, body, changed files, and diff via `gh`, synthesize
    one high-level architecture-style description across them, and write it to the card
    deferring prose to `write-notion-content`. No tests or verification text. A task
-   with no PRs gets no description write.
+   with no PRs gets no description write. The description is re-synthesized on every
+   run by design; change-detection caching (skipping re-synthesis when no linked PR's
+   head moved) is a deliberate non-goal unless requested later.
 
 ### Task edge cases
 
@@ -229,6 +231,9 @@ then computes the roadmap item.
 | All children `readyToDeploy`                            | `readyToDeploy` |
 | Any child `inReview` or `inDevelopment`                 | `inDevelopment` |
 | All children `backlog` or `inAnalysis` (none started)   | `backlog`       |
+
+Rows are evaluated top-down; the first matching row wins. A roadmap item with no
+child tasks matches no row and is left untouched (no-op, reported as unchanged).
 
 The same forward-only and availability-gate rules apply: only advance, and only if
 the option exists in the roadmap database.
@@ -285,9 +290,9 @@ with its proposed status and description.
 
 ## Skill mechanics
 
-- A single self-contained `SKILL.md` under
-  `plugins/soong/skills/sync-notion-status/`, registered in the plugin marketplace
-  manifest alongside the other soong skills.
+- A single self-contained `SKILL.md` placed under
+  `plugins/soong/skills/sync-notion-status/`, like the other soong skills. Skills are
+  auto-discovered from that directory, so no manifest edit is required.
 - Frontmatter: `name: sync-notion-status` and a `description:` carrying trigger
   phrases (for example "sync notion status", "reconcile the notion board", "update
   task statuses from PRs", and run-as-a-routine phrasings).
