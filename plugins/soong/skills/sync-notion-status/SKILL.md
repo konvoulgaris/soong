@@ -136,3 +136,59 @@ rank() {
 
 A held page is reported as `unchanged` or `skipped`; the description sync still runs
 where the task flow says it should.
+
+## Discovery and self-healing
+
+### Discovery (from the roadmap link)
+
+Use the Notion MCP to fetch schemas; never guess property names.
+
+1. Fetch the roadmap database schema. Its relation property names the target
+   collection; that target is the tasks database. If a tasks database was supplied
+   explicitly, use it and record the relation property that points at it.
+2. From the tasks schema, find the PR property: a URL or rich-text property whose
+   name is `PR` or `PRs`, or any case- and separator-insensitive form of "pull
+   request" (`Pull Request`, `Pull Requests`, `pull-request`, `pullrequest`):
+
+   ```bash
+   grep -iE '^(pr|prs|pull[ _-]?request|pull[ _-]?requests)$'
+   ```
+
+3. The status property for each database is its `status`-type property, or a `select`
+   named `Status`.
+4. Build each status map by reading the database's real status options and matching
+   each option name to a logical state by name (e.g. `Backlog`→`backlog`,
+   `In Review`→`inReview`, `Ready for QA`/`Ready to Deploy`→`readyToDeploy`).
+5. Persist the result under `derived` with a `derivedAt` timestamp using the upsert
+   snippet in Configuration.
+
+### Ambiguity
+
+When derivation has a single clear answer, proceed silently. When a piece is
+ambiguous (two or more candidate PR properties, or a status option that maps to no
+logical state):
+
+- running interactively: ask the user for that specific piece, then continue;
+- running unattended: skip that database or that single state, and record it in the
+  run report flags.
+
+### Self-healing
+
+At run time, validate `derived` against the live schemas. If the relation is gone,
+the PR property is missing, or a needed status can no longer be resolved against the
+current options, re-run discovery from the stored roadmap link, refresh `derived`,
+and continue. The roadmap link is the only durable anchor; everything under `derived`
+is disposable.
+
+### Inline setup
+
+If the config is missing or empty, or the roadmap in scope is not configured, run
+setup inline: ask the user for the roadmap database (and optionally the tasks
+database), run discovery, write the entry, and proceed. Offer to configure another
+roadmap.
+
+### First-ever unattended run with no config
+
+If there is no usable config and the run cannot prompt (scheduled or headless), exit
+cleanly with a message asking for one interactive run to configure. Never block.
+Subsequent unattended runs work normally.
