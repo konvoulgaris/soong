@@ -295,3 +295,50 @@ otherwise. Concretely: if standard input is not a TTY (`[ -t 0 ]` is false), or 
 invocation was made by a scheduled or headless runner, treat it as unattended. When in
 doubt, prefer the unattended path (comment and queue) so nothing is written to a
 roadmap page without a human in the loop.
+
+## Run flow
+
+1. Load config. If missing, or the scope's roadmap is not configured, run inline
+   setup and discovery. If nothing usable and the run cannot prompt, exit cleanly.
+2. Resolve scope. A page argument narrows to that task or roadmap item. No argument
+   scans every configured roadmap and its children.
+3. Validate and refresh `derived` against live schemas; self-heal from the roadmap
+   anchor if stale.
+4. Reconcile tasks first: per task, derive state, write status forward-only, sync
+   description if PRs.
+5. Reconcile roadmap items: roll up children, then confirm (interactive) or
+   comment-and-queue (unattended).
+6. Report.
+
+## Output
+
+Print a terminal summary, one line per page: `current -> new` status (or `unchanged` /
+`skipped`), description synced yes/no, and a flags list covering:
+
+- regressions skipped (derived state behind current),
+- unmapped logical states (database has no matching option),
+- ambiguous properties left unresolved,
+- unresolvable PR URLs,
+- roadmap items queued for review.
+
+In unattended mode, also leave a Notion comment on each queued roadmap page with its
+proposed status and description.
+
+## Arguments
+
+Optional argument: a page or database URL/ID that narrows scope to a single task or
+roadmap item. With no argument, scan every configured roadmap.
+
+## Scheduling
+
+To run unattended, schedule this skill via the `schedule` or `loop` skills. The first
+run on a new machine must be interactive so setup can capture the roadmap database;
+after that, scheduled runs work without prompts.
+
+## Rules
+
+- Never edits code, tests, or verification.
+- Never regresses a status, and never overwrites an unrecognized status.
+- Never targets a status option that does not exist in the database.
+- Never invents a card, database, or PR link.
+- Defer all Notion prose style to `write-notion-content`.
