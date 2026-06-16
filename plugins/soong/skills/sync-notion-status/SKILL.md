@@ -250,3 +250,48 @@ does not, and the page stays `backlog`.
    deferring prose to `write-notion-content`. No tests or verification text. A task
    with no PRs gets no description write. The description is re-synthesized on every
    run by design; change-detection caching is a deliberate non-goal unless requested.
+
+## Roadmap roll-up flow
+
+A roadmap item has no PRs of its own; its state and description roll up from its child
+tasks. Reconcile the children first (the task flow above), then compute the roadmap
+item from their post-update states. Enumerate children via the relation property.
+
+### Derive roadmap status
+
+| Children's states                                       | Roadmap state   |
+| ------------------------------------------------------- | --------------- |
+| All children `readyToDeploy`                            | `readyToDeploy` |
+| Any child `inReview` or `inDevelopment`                 | `inDevelopment` |
+| No in-flight child and not all `readyToDeploy`          | `backlog`       |
+
+Rows are evaluated top-down; the first matching row wins. Row 3 is the catch-all floor
+(it covers all children `backlog`/`inAnalysis` as well as mixes of `readyToDeploy` with
+not-yet-started children, since neither is in-flight). A roadmap item with no child
+tasks matches no row and is left untouched (no-op, reported as unchanged). The same
+forward-only and availability-gate rules apply: only advance, and only if the option
+exists in the roadmap database.
+
+### Derive roadmap description
+
+Synthesize a high-level summary across the children's PRs and changes, the roadmap
+analogue of `sync-pr-to-notion`. Architecture-level, no tests or verification, prose
+deferred to `write-notion-content`.
+
+### Interactive checkpoint (adaptive to run context)
+
+- Interactive run: after child tasks are updated, present the roadmap item's proposed
+  status (current -> derived) and proposed description, and ask the user to confirm,
+  edit, or skip before writing. The user owns the final roadmap narrative.
+- Unattended run: update child tasks normally, but do not write the roadmap item.
+  Leave a Notion comment on the roadmap page with the proposed status and description,
+  and list the item in the run report as awaiting review. Nothing on the roadmap page
+  itself changes until a human acts.
+
+### Run-context detection
+
+Treat the run as interactive when the session can prompt the user, and unattended
+otherwise. Concretely: if standard input is not a TTY (`[ -t 0 ]` is false), or the
+invocation was made by a scheduled or headless runner, treat it as unattended. When in
+doubt, prefer the unattended path (comment and queue) so nothing is written to a
+roadmap page without a human in the loop.
