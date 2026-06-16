@@ -114,3 +114,25 @@ backlog < inAnalysis < inDevelopment < inReview < readyToDeploy
 
 `inReview` is a task-only rung; roadmap items use `inDevelopment` as their single
 in-flight bucket (see Roadmap roll-up flow).
+
+### Forward-only comparison
+
+Map the page's current status option back to a logical state via the relevant status
+map (reverse lookup), then compare ranks on the ordering above:
+
+```bash
+rank() {
+  case "$1" in
+    backlog) echo 0;; inAnalysis) echo 1;; inDevelopment) echo 2;;
+    inReview) echo 3;; readyToDeploy) echo 4;; *) echo -1;;
+  esac
+}
+```
+
+- Current status's logical state is unrecognized (`rank` = -1, not in the map) →
+  hold. Never overwrite a status the map does not cover.
+- Derived rank greater than current rank → advance (write the derived status).
+- Derived rank equal to or less than current → hold (leave untouched).
+
+A held page is reported as `unchanged` or `skipped`; the description sync still runs
+where the task flow says it should.
