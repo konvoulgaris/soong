@@ -192,3 +192,61 @@ roadmap.
 If there is no usable config and the run cannot prompt (scheduled or headless), exit
 cleanly with a message asking for one interactive run to configure. Never block.
 Subsequent unattended runs work normally.
+
+## Task reconciliation flow
+
+For each task page in scope:
+
+### Read the linked PRs
+
+Read the PR property. For each PR URL, fetch its state with `gh` (no local checkout):
+
+```bash
+gh pr view "$url" --json state,isDraft,mergedAt,title,body,files
+```
+
+Treat each PR as: `merged` (has `mergedAt`), `ready` (open, not draft), `draft`
+(open, draft), or `closed` (closed without merge). A URL `gh` cannot resolve (deleted
+or no access) is ignored for state and flagged; derive from the rest.
+
+The description sync (below) needs the diff too; fetch it per PR with
+`gh pr diff "$url"`.
+
+### Derive the logical state
+
+| Condition on the task page                                         | Derived state   |
+| ------------------------------------------------------------------ | --------------- |
+| No PRs in the PR property, and no technical detail on the page     | `backlog`       |
+| No PRs, but technical detail present                               | `inAnalysis`    |
+| Has PR(s), and every linked PR is merged                           | `readyToDeploy` |
+| Has PR(s), at least one open and non-draft                         | `inReview`      |
+| Has PR(s), but only drafts (none merged, none ready)               | `inDevelopment` |
+
+Highest signal wins: a task reaches `readyToDeploy` only when every linked PR is
+merged. Otherwise the most-advanced in-flight signal applies, where merged is
+terminal and not ranked as in-flight (a ready-for-review PR beats a draft). A
+closed-unmerged PR contributes nothing. When no in-flight PR remains and not every PR
+is merged, the task falls to `inDevelopment`.
+
+Technical-detail test for the `inAnalysis` rule (either signal qualifies): if the
+page has a designated technical section (a heading such as `Technical`,
+`Implementation`, or `Analysis`), non-empty content there counts. Otherwise judge the
+page body. Implementation detail (architecture, APIs, data models, technical
+approach) counts; purely business or product framing (goals, value, user stories)
+does not, and the page stays `backlog`.
+
+### Apply the state (forward-only, availability-gated)
+
+1. Resolve the derived state's option name from `tasksStatusMap`. If the logical
+   state is not mapped (no such option in this database), do not change status; flag
+   it.
+2. Read the page's current status, reverse-map it to a logical state, and apply the
+   Forward-only comparison. Advance only when the derived rank is greater; otherwise
+   hold and report `unchanged`/`skipped`. If the current status cannot be reverse-mapped
+   (unrecognized option), hold and report `skipped`.
+3. Description sync runs whenever the task has PRs, regardless of whether status
+   moved. From each PR's title, body, changed files, and diff, synthesize one
+   high-level architecture-style description across them and write it to the card,
+   deferring prose to `write-notion-content`. No tests or verification text. A task
+   with no PRs gets no description write. The description is re-synthesized on every
+   run by design; change-detection caching is a deliberate non-goal unless requested.
