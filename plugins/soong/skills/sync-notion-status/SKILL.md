@@ -129,10 +129,10 @@ rank() {
 }
 ```
 
-- Current status's logical state is unrecognized (`rank` = -1, not in the map) →
+- Current status's logical state is unrecognized (`rank` = -1, not in the map) ->
   hold. Never overwrite a status the map does not cover.
-- Derived rank greater than current rank → advance (write the derived status).
-- Derived rank equal to or less than current → hold (leave untouched).
+- Derived rank greater than current rank -> advance (write the derived status).
+- Derived rank equal to or less than current -> hold (leave untouched).
 
 A held page is reported as `unchanged` or `skipped`; the description sync still runs
 where the task flow says it should.
@@ -157,8 +157,8 @@ Use the Notion MCP to fetch schemas; never guess property names.
 3. The status property for each database is its `status`-type property, or a `select`
    named `Status`.
 4. Build each status map by reading the database's real status options and matching
-   each option name to a logical state by name (e.g. `Backlog`→`backlog`,
-   `In Review`→`inReview`, `Ready for QA`/`Ready to Deploy`→`readyToDeploy`).
+   each option name to a logical state by name (e.g. `Backlog`->`backlog`,
+   `In Review`->`inReview`, `Ready for QA`/`Ready to Deploy`->`readyToDeploy`).
 5. Persist the result under `derived` with a `derivedAt` timestamp using the upsert
    snippet in Configuration.
 
