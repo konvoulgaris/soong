@@ -27,10 +27,13 @@ touches code, tests, or verification.
 
 ## Defer prose to write-notion-content
 
-All description text written to Notion follows the `write-notion-content` skill:
-match the page template, few words, lists over prose, one sentence where possible,
-no em-dashes. Status fields are set directly via the Notion MCP; only the prose
-defers there.
+Before writing any prose to Notion, invoke the `write-notion-content` skill and apply
+its rules to that text: match the page template, few words, lists over prose, one
+sentence where possible, no em-dashes. This covers all three prose write points: a
+task's description, a roadmap item's description, and the queued-roadmap comment in
+unattended mode. Invoke it every time, not once per run.
+
+Status fields are set directly via the Notion MCP; only the prose defers there.
 
 ## Configuration
 
@@ -247,7 +250,7 @@ does not, and the page stays `backlog`.
 3. Description sync runs whenever the task has PRs, regardless of whether status
    moved. From each PR's title, body, changed files, and diff, synthesize one
    high-level architecture-style description across them and write it to the card,
-   deferring prose to `write-notion-content`. No tests or verification text. A task
+   invoking `write-notion-content` for the prose. No tests or verification text. A task
    with no PRs gets no description write. The description is re-synthesized on every
    run by design; change-detection caching is a deliberate non-goal unless requested.
 
@@ -275,8 +278,8 @@ exists in the roadmap database.
 ### Derive roadmap description
 
 Synthesize a high-level summary across the children's PRs and changes, the roadmap
-analogue of `sync-pr-to-notion`. Architecture-level, no tests or verification, prose
-deferred to `write-notion-content`.
+analogue of `sync-pr-to-notion`. Architecture-level, no tests or verification; invoke
+`write-notion-content` for the prose.
 
 ### Interactive checkpoint (adaptive to run context)
 
@@ -284,9 +287,10 @@ deferred to `write-notion-content`.
   status (current -> derived) and proposed description, and ask the user to confirm,
   edit, or skip before writing. The user owns the final roadmap narrative.
 - Unattended run: update child tasks normally, but do not write the roadmap item.
-  Leave a Notion comment on the roadmap page with the proposed status and description,
-  and list the item in the run report as awaiting review. Nothing on the roadmap page
-  itself changes until a human acts.
+  Leave a Notion comment on the roadmap page with the proposed status and description
+  (invoke `write-notion-content` for the comment prose), and list the item in the run
+  report as awaiting review. Nothing on the roadmap page itself changes until a human
+  acts.
 
 ### Run-context detection
 
@@ -341,4 +345,5 @@ after that, scheduled runs work without prompts.
 - Never regresses a status, and never overwrites an unrecognized status.
 - Never targets a status option that does not exist in the database.
 - Never invents a card, database, or PR link.
-- Defer all Notion prose style to `write-notion-content`.
+- Invoke `write-notion-content` for all Notion prose (task and roadmap descriptions,
+  queued-roadmap comments).
