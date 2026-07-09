@@ -2,8 +2,9 @@
 
 ## Project
 
-This repository is a personal archive of Claude skills. It collects, organizes,
-and versions reusable skills for use across projects.
+This repository is a personal archive of software-engineering tooling. It
+collects, organizes, and versions reusable tools, skills, and agents for use
+across projects.
 
 ## Commits
 
