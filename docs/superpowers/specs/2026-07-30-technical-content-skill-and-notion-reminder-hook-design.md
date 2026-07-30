@@ -75,10 +75,23 @@ must therefore be a regex over the name suffix, not a literal:
 mcp__.*__notion-(create-pages|update-page|create-comment)
 ```
 
-Matchers are unanchored, so this also matches any future tool whose name merely
-contains one of these strings. The `case` re-check in the script is likewise
-suffix-based, so it does not add precision. Both are deliberately loose: a false
-positive costs one line of injected context, which is harmless.
+The two matching layers are loose at opposite ends, and a maintainer adding a
+fourth tool needs to know that.
+
+The `hooks.json` matcher is unanchored, so it matches any name that merely
+*contains* one of these strings, including a future `notion-update-page-icon`.
+The `case` patterns in the script are `*notion-update-page`, a leading star with
+no trailing star, so they are right-anchored and reject that same name. A tool
+call must satisfy both layers, which makes the pair stricter than either one
+alone.
+
+On today's tool set the two agree exactly, so this costs nothing now. It matters
+when a new `notion-update-page-*` tool appears: the matcher would pass it and
+the script would silently drop it. Keep the `case` list in the script in sync
+with the matcher.
+
+Where the layers do overlap, looseness is harmless: a false positive costs one
+line of injected context.
 
 Scope is the three tools that write prose a reader sees:
 

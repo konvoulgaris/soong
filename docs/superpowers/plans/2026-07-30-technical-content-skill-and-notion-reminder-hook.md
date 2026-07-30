@@ -74,8 +74,11 @@ injects. "The three prose tools" means `notion-create-pages`,
   `PreToolUse` entry. This is the only file that knows the matcher regex.
 
 The matcher lives in `hooks.json` and the `case` re-check lives in the script.
-Both are deliberately loose and suffix-based. They are not a security boundary;
-a false positive costs one injected line.
+The two are loose at opposite ends: the matcher is unanchored and matches any
+name containing one of the three strings, while the script's `case` patterns are
+right-anchored and match only names ending in them. A call must pass both, so the
+pair is stricter than either layer alone. Keep the two lists in sync when adding
+a tool.
 
 **Change 2, the skill.** Two new files.
 
@@ -276,9 +279,11 @@ Do not touch the `UserPromptSubmit` array. Do not reorder the existing two
 entries.
 
 Note on the matcher: it is a regex, unanchored, so it also matches any future
-tool whose name merely contains one of the three strings. That is accepted. The
-`case` block in the script is suffix-based too, so neither layer adds precision,
-and a false positive costs one line of injected context.
+tool whose name merely contains one of the three strings, such as
+`notion-update-page-icon`. That is accepted. The script's `case` patterns are
+right-anchored and would reject that name, so the two layers compose to
+something stricter than the matcher alone. Do not try to anchor or tighten the
+matcher here; the script is the precise layer.
 
 Note on `${CLAUDE_PLUGIN_ROOT}`: keep the escaped quotes exactly as written. The
 variable is expanded by Claude Code, not by your shell, and the quotes protect
