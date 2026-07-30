@@ -759,38 +759,45 @@ need the executable bit.
 
 ```bash
 git status --short
-git log --oneline -7
+git log --oneline e21f360..HEAD
 ```
 
-Expected: no output from `git status`. The log shows the five implementation
-commits plus a docs correction made during execution, on top of the plan commit,
-newest first:
+Expected: no output from `git status`. The log shows eleven commits on top of the
+spec and plan commits. Five carry the task list, and six are corrections that
+code review produced during execution:
 
 ```
 chore: bump plugin version to 0.4.0
+fix(write-technical-content): correct the commit message hand-off and rule 7
 feat(skills): add write-technical-content skill
+fix(write-technical-content): extend the admission criterion to the approved column
+docs: sync spec and plan tables with the corrected reference file
+fix(write-technical-content): protect software terms the table would break
 feat(write-technical-content): add approved words reference
+docs(plans): update task 6 history checks for the mid-execution docs commit
 docs: correct how the two notion hook matching layers compose
 feat(hooks): register notion content style reminder
 feat(hooks): add notion content style reminder script
-docs(plans): add implementation plan for notion reminder hook and write-technical-content skill
 ```
 
-The `docs:` commit is not from this plan's task list. A code review of Task 2
-found that the spec and plan misdescribed how the two matching layers compose,
-so the prose was corrected mid-execution.
+The `fix:` and `docs:` commits are not from this task list. Code review of tasks
+2, 3, and 4 found defects in the content this plan specified: the spec
+misdescribed how the two matching layers compose, five substitution rows would
+have destroyed a precise software meaning, the admission criterion screened only
+one column, and the scope section sent commit messages to a skill that does not
+cover them. Each correction updated the affected file and both documents.
 
 - [ ] **Step 5: Confirm nothing outside the planned files changed**
 
 ```bash
 git diff --stat docs/superpowers/specs/2026-07-30-technical-content-skill-and-notion-reminder-hook-design.md
-git diff --name-only HEAD~6 HEAD
+git diff --name-only 0f793ee HEAD
 ```
 
 Expected: the first command prints nothing, because the spec has no uncommitted
 changes. The second lists seven paths: the five implementation paths (the hook
 script, `hooks.json`, the two skill files, and `plugin.json`) plus the spec and
-plan files touched by the mid-execution docs correction. If you see an eighth,
+plan files, which the mid-execution corrections touched. If you see an eighth,
 find out what it is before you open a PR.
 
 ---
