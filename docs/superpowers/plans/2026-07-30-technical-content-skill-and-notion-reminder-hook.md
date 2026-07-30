@@ -416,15 +416,15 @@ and why `build`, `create`, and `support` appear there only as ordinary verbs.
 | a number of, a variety of | some, many |
 | facilitate | help |
 | functionality | feature |
-| methodology | approach, process |
+| methodology | approach |
 | endeavour, attempt | try |
 | ascertain, determine (in the sense of find out) | find |
 | require (in the sense of necessitate), necessitate | need |
-| modify, alter | change |
+| modify, alter (in the sense of edit prose or configuration) | change |
 | implement (as a synonym for write) | add, build, write |
 | execute (a command) | run |
-| obtain, acquire | get |
-| transmit | send |
+| obtain, acquire (in the sense of obtain a copy) | get |
+| transmit (in the sense of send a message) | send |
 | in the case of | for |
 | with regard to, in terms of | for, about |
 | a large number of | many |
@@ -464,6 +464,13 @@ A parenthetical narrows a row to one sense.
 - `require (in the sense of necessitate)` becomes "need". `require` as a language
   construct stays, as in `require('fs')`, and the RFC 2119 sense stays, as in
   "this field is required".
+- `alter (in the sense of edit prose or configuration)` becomes "change". `alter`
+  as a SQL keyword stays, as in "the migration runs `ALTER TABLE orders`".
+- `acquire (in the sense of obtain a copy)` becomes "get". `acquire` paired with
+  release stays, as in "acquire the write lock" and `sem.acquire()`.
+- `transmit (in the sense of send a message)` becomes "send". `transmit` as a
+  protocol term stays, as in "TCP retransmits the segment" and "the transmit
+  queue".
 
 If you replace "however" with "but", change the punctuation. Write "..., but
 ...", not "...; but, ...".
