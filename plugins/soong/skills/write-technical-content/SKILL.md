@@ -20,7 +20,8 @@ Technical English and adapted for software.
    vary a term for style.
 6. Keep articles and complete sentence structure. Simplified Technical English
    is not terse-speak.
-7. No ambiguous pronouns. Repeat the noun instead of writing "it" or "this".
+7. No ambiguous pronouns. If more than one noun could be the referent, repeat
+   the noun instead of writing "it" or "this".
 8. A warning or a caution comes before the step it applies to, never after.
 9. Six items maximum in one procedure step list. Split a longer list.
 10. No gerund as a noun. Write "To configure the server, edit the file", not
@@ -36,15 +37,18 @@ Before you choose a verb or a noun that has a shorter equivalent, read
 
 ## Scope
 
-This skill covers documentation. Two things belong to other skills:
+This skill covers documentation. Three kinds of text belong elsewhere:
 
-* Commit messages and PR titles or descriptions: use `manage-pr`.
+* PR titles and descriptions: use `manage-pr`.
 * Notion content: use `write-notion-content`.
+* Commit messages: follow the Conventional Commits rule in the repository
+  `CLAUDE.md`. No skill governs commit message style, and `manage-pr` does not:
+  it owns the PR title, which borrows Conventional Commit syntax.
 
 The Notion boundary matters because the two skills give opposite instructions.
 `write-notion-content` cuts articles and filler. This skill keeps articles and
 complete sentences. The destination decides: content going into Notion follows
 `write-notion-content`, and this skill does not apply.
 
-This skill states its own rules for the documentation it produces. It makes no
-claim of precedence over other active modes or skills.
+These rules govern the documentation this skill produces, and nothing more. The
+skill claims no precedence over other active modes or skills.

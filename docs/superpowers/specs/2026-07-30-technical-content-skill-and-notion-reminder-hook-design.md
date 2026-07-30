@@ -136,8 +136,11 @@ ADRs, migration guides, code comments, error and log messages.
 
 Explicit non-scope, stated in the description and again in the body:
 
-- Commit messages and PR titles or descriptions belong to `manage-pr`.
+- PR titles and descriptions belong to `manage-pr`.
 - Notion content belongs to `write-notion-content`.
+- Commit messages follow the Conventional Commits rule in the repository
+  `CLAUDE.md`. No skill owns commit message style. `manage-pr` owns the PR title,
+  which borrows Conventional Commit syntax, and says nothing about commits.
 
 ### SKILL.md rules
 
@@ -153,7 +156,8 @@ ASD-STE100 rules, adapted for software documentation:
    vary a term for style.
 6. Keep articles and complete sentence structure. Simplified Technical English
    is not terse-speak.
-7. No ambiguous pronouns. Repeat the noun instead of writing "it" or "this".
+7. No ambiguous pronouns. If more than one noun could be the referent, repeat
+   the noun instead of writing "it" or "this".
 8. A warning or a caution comes before the step it applies to, never after.
 9. Six items maximum in one procedure step list. Split a longer list.
 10. No gerund as a noun. Write "To configure the server, edit the file", not
@@ -177,10 +181,13 @@ resources, so there is no in-repo convention to match.
 
 ### Scope boundaries section
 
-Two boundaries, stated in the body as well as the description:
+Three boundaries, stated in the body as well as the description:
 
-- Commit messages and PR titles or descriptions: `manage-pr` owns those.
+- PR titles and descriptions: `manage-pr` owns those.
 - Notion content: `write-notion-content` owns that.
+- Commit messages: the repository `CLAUDE.md` holds the only rule. Do not send a
+  reader to `manage-pr` for these, because `manage-pr` covers the PR title and
+  not the commit message.
 
 The Notion boundary matters because the two skills give opposite instructions.
 `write-notion-content` rule 3 cuts articles and filler; this skill keeps
