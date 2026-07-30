@@ -2,30 +2,35 @@
 
 Use the approved column. This table is a guide to consistency in software
 documentation, not the ASD-STE100 dictionary. The full approved word list holds
-about 900 entries and is published under its own terms, so it is out of scope
-here.
+about 900 entries, and its publisher sets its own terms, so it stays out of
+scope here.
+
+A term belongs in the left column only if it carries no meaning as an
+identifier, a keyword, a protocol term, or a lifecycle state in common software
+vocabulary. A term that does carry one needs a sense-narrowing parenthetical, or
+it belongs in the protected list at the end of this file.
 
 | Not approved | Approved |
 | --- | --- |
 | utilize, make use of, leverage | use |
-| commence, initiate, kick off | start |
-| terminate | stop |
+| commence, initiate (in the sense of begin), kick off | start |
+| terminate (in the sense of end a task) | stop |
 | prior to | before |
 | subsequent to, following (as a time relation) | after |
 | in order to | to |
 | due to the fact that, owing to | because |
 | in the event that | if |
-| at this point in time, currently | now |
+| at this point in time | now |
 | is able to, has the ability to | can |
 | perform an update, do an update | update |
 | provide support for | support |
 | a number of, a variety of | some, many |
-| facilitate | help, let |
+| facilitate | help |
 | functionality | feature |
 | methodology | approach, process |
 | endeavour, attempt | try |
-| ascertain, determine | find |
-| require, necessitate | need |
+| ascertain, determine (in the sense of find out) | find |
+| require (in the sense of necessitate), necessitate | need |
 | modify, alter | change |
 | implement (as a synonym for write) | add, build, write |
 | execute (a command) | run |
@@ -58,15 +63,27 @@ A parenthetical narrows a row to one sense.
   `Reader` interface".
 - `following (as a time relation)` becomes "after". `following` meaning the next
   thing shown stays, as in "see the following example".
+- `terminate (in the sense of end a task)` becomes "stop". `terminate` as a
+  lifecycle event stays, as in "the process terminated with exit code 1" or "the
+  pod is terminating". A terminated thing has ended. A stopped thing can start
+  again.
+- `initiate (in the sense of begin)` becomes "start". `initiate` naming the
+  initiating side of a two-party exchange stays, as in "the client initiates the
+  TLS handshake".
+- `determine (in the sense of find out)` becomes "find". `determine` meaning
+  compute or decide stays, as in "the resolver determines the target host".
+- `require (in the sense of necessitate)` becomes "need". `require` as a language
+  construct stays, as in `require('fs')`, and the RFC 2119 sense stays, as in
+  "this field is required".
 
-Replacing "however" with "but" changes the punctuation. Write "..., but ...",
-not "...; but, ...".
+If you replace "however" with "but", change the punctuation. Write "..., but
+...", not "...; but, ...".
 
 ## Terms the table must not touch
 
-Some words look like filler and are not. They carry a precise meaning in
-software. Rule 5 of the skill, one word and one meaning, protects these rather
-than replacing them.
+Some words look like filler and are not. These words carry a precise meaning in
+software. Rule 5 of the skill, one word and one meaning, protects these terms
+rather than replacing them.
 
 - `verify` and `validate` are separate. Validation asks whether input satisfies
   the rules. Verification asks whether an artifact matches its specification.
@@ -75,8 +92,13 @@ than replacing them.
   works and still ships, its use is discouraged, and removal comes later.
   Writing "remove" tells the reader the feature is already gone.
 - `enable` is standard for flags and configuration. Keep "enable TLS". Do not
-  write "let TLS".
+  write "let TLS". For the same reason, never reach for `let` as a plain-language
+  replacement: it is also a binding keyword in JavaScript and Rust.
+- `currently` marks a state that holds now and is expected to change, which is
+  how a known limitation is written. Keep "the API currently returns only the
+  first 100 rows". Writing "now returns" announces a change instead, and reads as
+  a regression.
 - `function` and `method` name language constructs. Never introduce either as a
-  plain-language replacement for something else, because the reader will look
-  for code. This is why `functionality` maps to "feature" and `methodology` maps
-  to "approach".
+  plain-language replacement for something else, because the reader looks for
+  code. This is why `functionality` maps to "feature" and `methodology` maps to
+  "approach".
