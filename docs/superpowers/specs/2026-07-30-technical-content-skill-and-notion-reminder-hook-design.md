@@ -278,14 +278,14 @@ rather than replacing them.
   Neither is "check".
 - `deprecate` is a lifecycle state, not a removal. It means the feature still
   works and still ships, its use is discouraged, and removal comes later.
-  Writing "remove" tells the reader the feature is already gone.
+  If you write "remove", the reader learns the feature is already gone.
 - `enable` is standard for flags and configuration. Keep "enable TLS". Do not
   write "let TLS". For the same reason, never reach for `let` as a plain-language
   replacement: it is also a binding keyword in JavaScript and Rust.
 - `currently` marks a state that holds now and is expected to change, which is
   how a known limitation is written. Keep "the API currently returns only the
-  first 100 rows". Writing "now returns" announces a change instead, and reads as
-  a regression.
+  first 100 rows". If you write "now returns", you announce a change instead, and
+  the note reads as a regression.
 - `function` and `method` name language constructs. Never introduce either as a
   plain-language replacement for something else, because the reader looks for
   code. This is why `functionality` maps to "feature" and `methodology` maps to

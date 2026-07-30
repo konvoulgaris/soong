@@ -390,10 +390,14 @@ documentation, not the ASD-STE100 dictionary. The full approved word list holds
 about 900 entries, and its publisher sets its own terms, so it stays out of
 scope here.
 
-A term belongs in the left column only if it carries no meaning as an
-identifier, a keyword, a protocol term, or a lifecycle state in common software
-vocabulary. A term that does carry one needs a sense-narrowing parenthetical, or
-it belongs in the protected list at the end of this file.
+A term belongs in the left column only if it carries no software meaning. Check
+four senses: an identifier, a keyword, a protocol term, and a lifecycle state. A
+term that carries one needs a sense-narrowing parenthetical, or it belongs in the
+protected list at the end of this file.
+
+The same test applies to the approved column. Never offer a replacement that the
+reader could read as code. This is why `let` is absent from every approved cell,
+and why `build`, `create`, and `support` appear there only as ordinary verbs.
 
 | Not approved | Approved |
 | --- | --- |
@@ -475,14 +479,14 @@ rather than replacing them.
   Neither is "check".
 - `deprecate` is a lifecycle state, not a removal. It means the feature still
   works and still ships, its use is discouraged, and removal comes later.
-  Writing "remove" tells the reader the feature is already gone.
+  If you write "remove", the reader learns the feature is already gone.
 - `enable` is standard for flags and configuration. Keep "enable TLS". Do not
   write "let TLS". For the same reason, never reach for `let` as a plain-language
   replacement: it is also a binding keyword in JavaScript and Rust.
 - `currently` marks a state that holds now and is expected to change, which is
   how a known limitation is written. Keep "the API currently returns only the
-  first 100 rows". Writing "now returns" announces a change instead, and reads as
-  a regression.
+  first 100 rows". If you write "now returns", you announce a change instead, and
+  the note reads as a regression.
 - `function` and `method` name language constructs. Never introduce either as a
   plain-language replacement for something else, because the reader looks for
   code. This is why `functionality` maps to "feature" and `methodology` maps to
