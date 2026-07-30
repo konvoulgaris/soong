@@ -729,32 +729,39 @@ need the executable bit.
 
 ```bash
 git status --short
-git log --oneline -6
+git log --oneline -7
 ```
 
-Expected: no output from `git status`. The log shows five new commits on top of
-the spec commit, in this order, newest first:
+Expected: no output from `git status`. The log shows the five implementation
+commits plus a docs correction made during execution, on top of the plan commit,
+newest first:
 
 ```
 chore: bump plugin version to 0.4.0
 feat(skills): add write-technical-content skill
 feat(write-technical-content): add approved words reference
+docs: correct how the two notion hook matching layers compose
 feat(hooks): register notion content style reminder
 feat(hooks): add notion content style reminder script
-docs(specs): add design for notion reminder hook and write-technical-content skill
+docs(plans): add implementation plan for notion reminder hook and write-technical-content skill
 ```
+
+The `docs:` commit is not from this plan's task list. A code review of Task 2
+found that the spec and plan misdescribed how the two matching layers compose,
+so the prose was corrected mid-execution.
 
 - [ ] **Step 5: Confirm nothing outside the planned files changed**
 
 ```bash
 git diff --stat docs/superpowers/specs/2026-07-30-technical-content-skill-and-notion-reminder-hook-design.md
-git diff --name-only HEAD~5 HEAD
+git diff --name-only HEAD~6 HEAD
 ```
 
-Expected: the first command prints nothing, because the spec is committed and
-untouched. The second lists exactly five paths: the hook script, `hooks.json`,
-the two skill files, and `plugin.json`. If you see a sixth, find out what it is
-before you open a PR.
+Expected: the first command prints nothing, because the spec has no uncommitted
+changes. The second lists seven paths: the five implementation paths (the hook
+script, `hooks.json`, the two skill files, and `plugin.json`) plus the spec and
+plan files touched by the mid-execution docs correction. If you see an eighth,
+find out what it is before you open a PR.
 
 ---
 
