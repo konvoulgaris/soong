@@ -20,6 +20,16 @@
             "statusMessage": "Enforcing worktree-first brainstorming"
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*__notion-(create-pages|update-page|create-comment)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notion-content-reminder.sh\"",
+            "statusMessage": "Reminding to follow Notion content style"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
