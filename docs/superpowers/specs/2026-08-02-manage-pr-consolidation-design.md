@@ -173,8 +173,10 @@ matches branch 2 and receives the advisory, but the attribution check passes
 vacuously. This is an accepted limitation of whole-command scanning; the skill
 text is the only guard for file-sourced bodies.
 
-Denies when the command matches either the attribution signature pattern or
-the footer-trailer pattern, both case-insensitively.
+Denies when the command matches any of three patterns, all case-insensitively:
+the attribution signature, the footer trailer, and the generated-with footer.
+Together these cover every string the shared rules forbid, matching branch 1's
+rule set.
 
 Signature pattern, where `M` is the marker class
 `[-*_~>—[:space:]🤖]*`:
@@ -206,6 +208,31 @@ unanchored (`pr-guard.sh:22`). That divergence is deliberate and left alone:
 branch 1 scans PR titles and bodies, where a quoted grep pattern is far less
 likely than in a review reply about this hook. Aligning branch 1 is out of
 scope.
+
+Generated-with footer pattern, the third check branch 1 makes:
+
+```
+^M generated with
+```
+
+Anchored to line start, with the full marker class, so a leading `🤖` or `--`
+is absorbed. It deliberately does **not** require what follows, because the
+canonical footer is:
+
+```
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+That line defeats the signature pattern — the markdown link's
+`](https://claude.com/claude-code)` tail holds letters, slashes, colons, and
+parens, none in the marker class, so `$` is never reached — and it defeats the
+now-anchored emoji alternative, since the emoji is followed by text. Without
+this third pattern the canonical footer reaches GitHub. Bare
+`Generated with Claude Code` denies via the signature pattern, which is what
+masked the gap: the plain form works and the real-world linked form does not.
+
+Anchoring keeps prose safe: `The footer says "Generated with" and must be
+stripped.` and `This PR body was generated with care` both pass.
 
 The signature pattern is **line-anchored**. That is what makes it a signature
 check rather than a prose check. `grep -E` applies `^` and `$` per line, so the
@@ -269,6 +296,17 @@ Trailer pattern:
 | `grep -qiE "generated with\|co-authored-by\|🤖"` | pass |
 | `Added a test asserting 🤖 is rejected.` | pass |
 | `Nice, the bot works 🤖` | pass |
+
+Generated-with footer pattern:
+
+| Body line | Result |
+| --- | --- |
+| `🤖 Generated with [Claude Code](https://claude.com/claude-code)` | deny |
+| `Generated with Claude Code` | deny |
+| `Generated with the manage-pr skill` | deny |
+| `-- Generated with Claude Code` | deny |
+| `The footer says "Generated with" and must be stripped.` | pass |
+| `This PR body was generated with care, see the note.` | pass |
 
 A signature on its own line at the end of a multi-line body is caught;
 `Done.` followed by a new line beginning `By Claude Code convention` is not.
@@ -363,11 +401,16 @@ the absence of exactly these is what let the write-detection bug through:
 - `gh api graphql -f query='...reviewThreads...'`: no output at all.
 
 **Restored footer checks on branch 2.** `gh pr comment` with a
-`Co-Authored-By:` trailer: deny. With a bare `🤖` on its own line: deny. With a
-body quoting `pr-guard.sh`'s own grep pattern, emoji included: **pass** — the
-regression test for the unanchored form. Prose mentioning the emoji mid-sentence
-passes. The trailer table's prose rows exist because their absence is what let
-the unanchored alternative through review.
+`Co-Authored-By:` trailer: deny. With a bare `🤖` on its own line: deny. With
+the canonical linked footer
+`🤖 Generated with [Claude Code](https://claude.com/claude-code)`: deny — this
+case must be tested in its **linked** form, not as bare
+`Generated with Claude Code`, because the bare form denies via the signature
+pattern and masks a missing generated-with check. With a body quoting
+`pr-guard.sh`'s own grep pattern, emoji included: **pass** — the regression test
+for the unanchored emoji. Prose mentioning either forbidden string mid-sentence
+passes. The prose rows in both tables exist because their absence is what let
+earlier defects through review.
 
 **Plumbing.**
 
