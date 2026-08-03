@@ -146,12 +146,18 @@ advise. Never both.
 **Branch 2: comment-posting commands.** Matched in two arms, because the two
 command families need different treatment:
 
-- `gh pr comment` and `gh pr review` match unconditionally. Both are inherently
-  write operations; there is no read-only form to exclude.
+- `gh pr comment` and `gh pr review` match unconditionally.
 - `gh api` calls to `.../comments` or `.../replies` match only when they also
   carry a body flag (`-f body=`, `-F body=`, `--field body=`,
   `--raw-field body=`) or an explicit write method (`--method POST`,
-  `-X POST`).
+  `-X POST`). A `gh api` call to those paths **without** one of those flags is
+  not a branch-2 match and falls through to branch 3.
+
+Arm 1 is unconditional even though bodyless forms exist (`gh pr review
+--approve`, `gh pr review --list`). Those receive the branch-2 advisory telling
+the model to confirm a reply that does not exist. That is harmless noise, and
+the alternative — filtering arm 1 on body flags — is precisely the bug described
+below.
 
 The write-detection filter applies to the `gh api` arm **only**. Applying it to
 all three families silently drops every `gh pr comment` and `gh pr review`
@@ -177,11 +183,29 @@ Signature pattern, where `M` is the marker class
 ^M(addressed|fixed|resolved|handled|generated|created|done)[[:space:]]+(by|with)[[:space:]]+claude([[:space:]]+code)?M[.!]?M$
 ```
 
-Footer-trailer pattern, restoring the two checks branch 1 already makes:
+Footer-trailer pattern, restoring the two checks branch 1 already makes. `M2` is
+the marker class without the emoji, `[-*_~>—[:space:]]*`:
 
 ```
-^[[:space:]]*co-authored-by:|🤖
+^[[:space:]]*co-authored-by:|^M2🤖M2$
 ```
+
+Both alternatives are anchored. `co-authored-by:` is a trailer and anchors
+naturally at line start. The bare emoji is anchored to a whole line for the same
+reason the signature pattern is: unanchored, it denies any reply that merely
+*mentions* the emoji, and this repo's review threads discuss a hook that greps
+for it. `grep -qiE "generated with|co-authored-by|🤖"` — a literal quote of
+`pr-guard.sh:22` — is a realistic reply here and must not be denied.
+
+Anchoring costs nothing in coverage: `🤖 Addressed by Claude Code` is already
+caught by the signature pattern, whose marker class includes the emoji. The
+trailer alternative exists only for a bare emoji standing alone as a sign-off.
+
+Note this makes branch 2 narrower than branch 1, which still greps `🤖`
+unanchored (`pr-guard.sh:22`). That divergence is deliberate and left alone:
+branch 1 scans PR titles and bodies, where a quoted grep pattern is far less
+likely than in a review reply about this hook. Aligning branch 1 is out of
+scope.
 
 The signature pattern is **line-anchored**. That is what makes it a signature
 check rather than a prose check. `grep -E` applies `^` and `$` per line, so the
@@ -239,7 +263,12 @@ Trailer pattern:
 | --- | --- |
 | `Co-Authored-By: Claude <noreply@anthropic.com>` | deny |
 | `🤖` | deny |
+| `-- 🤖` | deny |
 | `The co-authored-by trailer is stripped by the hook.` | pass |
+| `The 🤖 emoji is banned in PR bodies, see the shared rules.` | pass |
+| `grep -qiE "generated with\|co-authored-by\|🤖"` | pass |
+| `Added a test asserting 🤖 is rejected.` | pass |
+| `Nice, the bot works 🤖` | pass |
 
 A signature on its own line at the end of a multi-line body is caught;
 `Done.` followed by a new line beginning `By Claude Code convention` is not.
@@ -334,7 +363,11 @@ the absence of exactly these is what let the write-detection bug through:
 - `gh api graphql -f query='...reviewThreads...'`: no output at all.
 
 **Restored footer checks on branch 2.** `gh pr comment` with a
-`Co-Authored-By:` trailer: deny. With a bare `🤖`: deny.
+`Co-Authored-By:` trailer: deny. With a bare `🤖` on its own line: deny. With a
+body quoting `pr-guard.sh`'s own grep pattern, emoji included: **pass** — the
+regression test for the unanchored form. Prose mentioning the emoji mid-sentence
+passes. The trailer table's prose rows exist because their absence is what let
+the unanchored alternative through review.
 
 **Plumbing.**
 
