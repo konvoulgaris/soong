@@ -322,11 +322,36 @@ A clean comment command gets `additionalContext`.
 **Body extraction.** The existing title parser handles `--title "x"` and
 `-t 'x'` only. Reply bodies arrive as HEREDOCs
 (`--body "$(cat <<'EOF' ... EOF)"`), which a flag-anchored `grep -oE` cannot
-capture. The attribution check therefore scans the whole command string. This
-is safe because the pattern is line-anchored and the HEREDOC's newlines survive
-into the hook's `tool_input.command` — confirmed by feeding real hook JSON
-through `jq -r '.tool_input.command'` and matching against it. Whole-command
-scanning also matches the existing footer check, which already works this way.
+capture, so the attribution checks scan the whole command string rather than
+extracting the body.
+
+Whole-command scanning alone is **not** sufficient, and this was found during
+implementation after five review passes missed it. The patterns are
+line-anchored, and a multi-line HEREDOC body does put the signature on its own
+line — newlines survive into `tool_input.command`, confirmed by feeding real
+hook JSON through `jq -r '.tool_input.command'`. But a **single-line** body flag
+embeds the phrase mid-string:
+
+```
+gh pr comment 5 -b 'Addressed by Claude Code'
+```
+
+There is no line break before `Addressed`, so `^` never matches and the deny
+silently fails. That is the most likely shape for a short reply, so the check
+would have missed the common case while passing every test written against bare
+body lines. Every review iteration tested patterns against body text in
+isolation, never against a body embedded in a command.
+
+The hook therefore normalises before matching: insert a newline after each body
+flag delimiter (`-b`, `--body`, `-f body=`, and the `-F` / `--field` /
+`--raw-field` variants) and after a `$(cat <<EOF` opener, so the body's first
+line becomes a real line. The signature and trailer patterns allow an optional
+closing quote before `$`, since normalisation leaves the delimiter's closing
+quote at the end of a single-line body. Verified against both single-line and
+HEREDOC forms.
+
+Tests must cover both shapes. A test suite built only from bare body strings
+reproduces the original blind spot.
 
 **Reason joining.** The current script joins denial reasons with
 `${reasons[*]}`, which uses a single space and runs two violations into one

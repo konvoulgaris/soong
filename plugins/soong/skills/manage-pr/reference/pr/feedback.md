@@ -1,15 +1,14 @@
----
-name: address-pr-feedback
-description: Use when responding to reviewers on your own open pull request, working through review comments, deciding what to change, and replying on the threads. Walks every unresolved review thread one-by-one with you, proposes a few options per comment, makes any agreed code change, drafts the reply, and posts all replies in one batch at the end. Triggers on "address the PR feedback", "reply to the reviewers", "go through the review comments", "respond to the PR comments".
----
-
-# address-pr-feedback
+# manage-pr: feedback
 
 Work through the reviewer feedback on **your own** open PR, comment by comment, with
 the user driving every decision. This is an interactive walk: you never batch-decide
 or auto-resolve. For each unresolved thread you surface the comment, propose a few
 ways to handle it, get the user's call, make any agreed code change, and draft the
-reply. Replies are collected and posted together at the very end.
+reply. Replies are collected and posted together at the very end, after the user
+approves the batch.
+
+The shared rules in `SKILL.md` apply here — no generated-by footer, no attribution
+tag, never post without the user's go-ahead.
 
 ## Resolve the PR
 
@@ -59,10 +58,10 @@ Track the threads as todos and go through them **one at a time, in order**. For 
 5. If the decision involves a code change, **make the change now**, then draft a reply
    that references what you changed. Otherwise just draft the reply.
 6. Build the reply per the reply-style rules and store it as a draft against this
-   thread's comment id. Do not ask the user whether to tighten or edit it. Do not ask
-   whether to respond now or keep it as a draft. The reply always stays a draft until
-   the batch post at the end. Mark whether this thread involved a code change, so you
-   can attach the commit link when posting. Do **not** post yet.
+   thread's comment id. Do not ask the user to tighten, edit, or sign off on this
+   individual draft, and do not ask whether to respond now — every reply stays a
+   draft until the batch approval at the end. Mark whether this thread involved a
+   code change, so you can attach the commit link when posting. Do **not** post yet.
 
 ## Reply style
 
@@ -78,8 +77,10 @@ do trick.
 - No em-dashes. Use a period, comma, or parentheses instead.
 - No Conventional-Commits formatting, no headers, no boilerplate, no generated-by
   footers, no robot emoji.
+- **Never sign a reply with an attribution tag.** No "Addressed by Claude Code", no
+  variation of it, in any position. The hook denies these.
 
-## Post at the end
+## Approve the batch, then post
 
 Once every unresolved thread has a drafted reply (or was explicitly skipped):
 
@@ -89,7 +90,13 @@ Once every unresolved thread has a drafted reply (or was explicitly skipped):
    `<repo-url>/commit/<sha>`. One commit can resolve several threads; reuse its link.
 2. For each thread whose reply cites a code change, append the commit link to the
    stored reply. Threads with no code change stay link-free.
-3. Post the replies in one batch. Reply on each thread to the stored comment id:
+3. **Show the user every drafted reply together**, each against its file:line, and
+   wait for an explicit go-ahead. This is the one sign-off in the walk. Seeing the
+   replies side by side is when tone inconsistencies across them become visible, so
+   present them as a set, not one at a time. If the user wants changes, make them and
+   show the revised set again.
+4. Only after the user approves, post the replies in one batch. Reply on each thread
+   to the stored comment id:
 
 ```
 gh api repos/<owner>/<repo>/pulls/<number>/comments/<comment-id>/replies \
@@ -101,15 +108,18 @@ asks. Leave that to the reviewer.
 
 ## Rules
 
-- One comment at a time. Never present a bulk plan for all comments and ask for a
-  single approval. The user decides each one.
+- One comment at a time during the walk. Never present a bulk plan for all comments
+  and ask for a single approval on the decisions. The user decides each one.
 - Always offer options and a recommendation; never just pick an action silently.
 - Make the agreed code change before drafting the reply that describes it, so the
   reply is accurate.
-- Build the reply from the reviewer's point and the reply-style rules. Do not prompt
-  the user to tighten, edit, or sign off on it, and do not ask whether to respond now.
-  Every reply stays a draft.
-- Post all replies only at the end, never before.
+- **Per thread**, do not prompt the user to tighten, edit, or sign off on the draft,
+  and do not ask whether to respond now. Build it from the reviewer's point and the
+  reply-style rules, and keep it a draft.
+- **On the assembled batch**, always get one explicit approval before posting. These
+  two rules are not in tension: no sign-off on each draft as it is written, one
+  sign-off on the whole set before anything reaches GitHub.
+- Post all replies only at the end, never before, and never without that approval.
 - Only touch unresolved threads. Do not reply on or reopen resolved ones.
 - Never resolve or dismiss a reviewer's thread on their behalf unless asked.
 - If a code change is large or risky, flag it and confirm scope before editing rather
