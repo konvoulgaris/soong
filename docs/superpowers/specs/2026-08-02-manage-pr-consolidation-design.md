@@ -212,8 +212,12 @@ scope.
 Generated-with footer pattern, the third check branch 1 makes:
 
 ```
-^M generated with
+^Mgenerated with
 ```
+
+No space between `M` and `generated`. `M` is starred and matches empty, so a
+literal space there would require one before the word and an unmarked
+`Generated with the manage-pr skill` would slip.
 
 Anchored to line start, with the full marker class, so a leading `🤖` or `--`
 is absorbed. It deliberately does **not** require what follows, because the
@@ -386,7 +390,7 @@ framework. It exits non-zero on the first failure and is run by hand.
 
 Cases:
 
-**Patterns.** Every row of both tables above, asserting deny or pass. A
+**Patterns.** Every row of all three tables above, asserting deny or pass. A
 multi-line body whose last line is a bare signature: deny. `Done.` followed by a
 line starting `By Claude Code convention`: pass.
 
