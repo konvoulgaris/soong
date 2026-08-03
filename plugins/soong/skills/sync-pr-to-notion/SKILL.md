@@ -31,7 +31,8 @@ what the branch changes. This skill describes work; it does not do work.
 
 3. **If no card** (empty output, missing file, or `null`): ask the user to specify the
    Notion card, then write a record for this branch so future runs find it (same shape
-   and merge approach as the `manage-pr` skill's "PR record" section). Then proceed.
+   and merge approach as the "PR record" section in the `manage-pr` skill's
+   `reference/pr/compose.md`). Then proceed.
 
 4. **Read the changes at a high level.** Diff the branch against its base locally:
 
