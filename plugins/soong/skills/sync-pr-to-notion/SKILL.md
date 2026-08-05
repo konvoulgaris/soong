@@ -17,14 +17,17 @@ what the branch changes. This skill describes work; it does not do work.
 
 ## Steps
 
-1. **Resolve the branch.** `git rev-parse --abbrev-ref HEAD` and the project name
-   (`basename "$(git rev-parse --show-toplevel)"`).
+1. **Resolve the branch.** `git rev-parse --abbrev-ref HEAD` and the project name, taken
+   from the **common** git dir (see step 2). Never use `--show-toplevel`: inside a linked
+   worktree it returns the worktree directory, so the lookup would miss the record that
+   `manage-pr` wrote under the repo name.
 
 2. **Look up the linked card** in the PR record `manage-pr` wrote — no `gh` CLI needed:
 
    ```bash
    file="${XDG_STATE_HOME:-$HOME/.local/state}/soong/pr-records.json"
-   project="$(basename "$(git rev-parse --show-toplevel)")"
+   common="$(git rev-parse --path-format=absolute --git-common-dir)"  # main .git in worktrees too
+   top="${common%/.git}"; top="${top%/}"; project="${top##*/}"
    branch="$(git rev-parse --abbrev-ref HEAD)"
    jq -r --arg p "$project" --arg b "$branch" '.[$p][$b].notionCard // empty' "$file"
    ```
