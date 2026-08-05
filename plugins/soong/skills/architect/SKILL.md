@@ -25,18 +25,29 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/architect-setup/scripts/architect-setup.sh" g
 
 - **Exit 0** — read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON. Continue.
 - **Exit 3** — this repo is not configured. Say so, then invoke the `architect-setup`
-  skill. If setup stops without writing a mapping, **stop here too**; do not brainstorm
-  and do not touch Notion.
-- **Exit 1 or 2** — report the error and stop.
+  skill. When setup finishes, run `get` again: exit 0 means continue, anything else
+  means **stop here**. Do not brainstorm and do not touch Notion on a non-zero code.
+- **Exit 1** — an error, not an unconfigured repo: no `jq`, or a corrupt config file.
+  Report the message and stop. Never re-run setup to "fix" a corrupt file; setup
+  refuses to overwrite one.
+- **Exit 2** — not inside a git repository, or a usage error. Report it and stop.
+
+Confirm the Notion MCP is reachable now, in this step, rather than discovering at
+Step 5 that a finished spec has nowhere to go.
 
 ## Step 2: Brainstorm the spec, on the main thread
 
 Invoke `superpowers:brainstorming` and run it here, in the main thread, so the
 back-and-forth actually reaches the user.
 
-**Produce the spec only.** Brainstorming normally ends by invoking `writing-plans`; do
-not follow that transition. Stop once the design doc is written and the user approves it.
-The implementation plan is the next session's job, per Step 6.
+**Produce the spec only.** Brainstorming normally ends by invoking
+`superpowers:writing-plans`; do not follow that transition. Stop once the design doc is
+written and the user approves it. The implementation plan is the next session's job, per
+Step 6.
+
+A worktree-first hook fires on `superpowers:brainstorming`. This skill writes no code, so
+a worktree buys nothing here, and the spec doc plus the Notion pages are the only output.
+Create one if the hook insists, but keep the spec path in the repo the config maps to.
 
 Frame the design as a **stack of PRs** from the start:
 
@@ -52,8 +63,9 @@ with the approved spec.
 The agent is a **reviewer only**. It writes nothing to Notion and edits no files. It
 returns findings and recommended steps.
 
-Give it: the spec (or its path), the proposed PR stack, and enough repo context to judge
-the split.
+Give it, explicitly: the spec path, the proposed PR stack as a list, and the files or
+globs each PR touches. Naming the files keeps the agent verifying rather than
+rediscovering the codebase from zero.
 
 ## Step 4: Address the review with the user, before Notion
 
@@ -66,15 +78,21 @@ Walk the agent's findings **one at a time**, in the agent's priority order. For 
 4. Apply accepted changes to the spec.
 
 Do not batch the findings into one message, and do not proceed to Notion until every
-finding is resolved. If the changes reshape the PR stack substantially, re-dispatch
-`architect-cobrain` on the revised spec.
+finding is resolved.
+
+Re-dispatch `architect-cobrain` only when a PR was added, removed, or re-ordered.
+Changes inside a single PR's scope get resolved here, on the main thread. A re-dispatch
+starts from an empty context, so pass the revised stack and what changed, not the whole
+spec again.
 
 ## Step 5: Write to Notion
 
 Only after Step 4 finishes.
 
-Use the `write-notion-content` and `write-technical-content` skills for **everything**
-written to Notion. They govern the prose; this skill governs the placement.
+Use the `write-notion-content` skill for **everything** written to Notion. It governs
+the prose; this skill governs the placement. Do not also apply
+`write-technical-content`: that skill excludes Notion content and gives opposite
+instructions on articles and sentence form.
 
 **On the roadmap item** (in `roadmapDb`):
 
@@ -105,9 +123,9 @@ whole stack at once.
 
 ## Rules
 
-- Never write to Notion before the review findings are resolved with the user.
-- Never implement. No code changes, in any step.
-- Stop if the repo is not configured and setup does not complete.
-- Every PR in the stack is independently reviewable, or the split is wrong.
-- Defer all Notion prose style to `write-notion-content` and `write-technical-content`.
-- A mermaid diagram is for clarity, not decoration. Omit it when prose is clearer.
+- Never implement. No code changes, in any step, including a step the user asks for
+  mid-flow. Implementation is the next session's job.
+- Notion writes are not reversible by this skill. Once Step 5 creates pages, undoing
+  them is manual, so treat the Step 4 gate as the last checkpoint.
+- If Step 5 fails partway, say which pages exist before retrying. Re-running it creates
+  duplicates; there is no idempotency key.

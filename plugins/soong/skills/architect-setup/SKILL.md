@@ -15,9 +15,13 @@ Start by telling the user, in one line, what this does. For example:
 
 ## Config
 
-- **File:** `${XDG_DATA_HOME:-$HOME/.local/share}/soong/architect.json`
+- **File:** `${XDG_DATA_HOME:-$HOME/.local/share}/soong/architect.json`. This is user
+  config, so it lives under `XDG_DATA_HOME`. The PR records that `manage-pr` writes are
+  regenerable state and live under `XDG_STATE_HOME` instead.
 - **Script:** `${CLAUDE_PLUGIN_ROOT}/skills/architect-setup/scripts/architect-setup.sh`
-- Keyed by project (`basename` of the repo toplevel), one mapping per repo.
+- **Shape:** `{ "<project>": { roadmapDb, taskDb, taskTemplate, updatedAt } }`
+- Keyed by the repo directory name, taken from the main checkout, so every linked
+  worktree of one repo shares a single mapping.
 
 ## Steps
 
@@ -27,7 +31,10 @@ Start by telling the user, in one line, what this does. For example:
    bash "${CLAUDE_PLUGIN_ROOT}/skills/architect-setup/scripts/architect-setup.sh" get
    ```
 
-   Exit code 3 means this repo has no mapping yet.
+   Exit 3 means this repo has no mapping yet: continue. Exit 1 means the config is
+   corrupt, and `set` will refuse to overwrite it: report the message and stop, because
+   answering the questions below cannot succeed. Exit 2 means this is not a git
+   repository: stop. Skip this step when `architect` already reported exit 3.
 
 2. **Ask for the roadmap item database.** Ask for a Notion database URL or id.
 
@@ -58,6 +65,6 @@ Start by telling the user, in one line, what this does. For example:
 ## Rules
 
 - Never invent, guess, or infer a database or template id. Ask, then verify via MCP.
-- Never partially write the mapping. Both databases must verify first.
-- Verify before writing, so a failed setup leaves no half-configured repo behind.
+  The script stores whatever string it is given: it cannot tell a real database id from
+  a typo, so MCP verification is the only check that exists.
 - Ask one question at a time.
