@@ -94,7 +94,9 @@ is never committed and is queryable later with `jq`.
   }
   ```
 
-- **project** — the repo name (`basename` of the repo toplevel).
+- **project** — the repo name. Derive it from the **common** git dir, never from
+  `--show-toplevel`: inside a linked worktree `--show-toplevel` returns the worktree
+  directory, which would key the record on the throwaway branch name instead of the repo.
 - **branch** — current branch (`git rev-parse --abbrev-ref HEAD`).
 - **notionCard** — the card resolved via the existing `manage-notion-page` flow; store
   `null` if none was resolved. Never invent one.
@@ -105,7 +107,8 @@ Create the directory and merge into the file idempotently. Example:
 ```bash
 dir="${XDG_STATE_HOME:-$HOME/.local/state}/soong"; file="$dir/pr-records.json"
 mkdir -p "$dir"; [ -f "$file" ] || echo '{}' > "$file"
-project="$(basename "$(git rev-parse --show-toplevel)")"
+common="$(git rev-parse --path-format=absolute --git-common-dir)"  # main .git in worktrees too
+top="${common%/.git}"; top="${top%/}"; project="${top##*/}"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 sha="$(git rev-parse HEAD)"
 card="${CARD:-null}"   # url/id resolved via manage-notion-page, or null
