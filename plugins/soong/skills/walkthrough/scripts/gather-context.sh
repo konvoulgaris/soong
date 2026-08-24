@@ -49,9 +49,13 @@ files="$(git diff --numstat "$base...HEAD" 2>/dev/null | jq -Rs '
     })')"
 
 # No pull request is a normal result, not a failure. --argjson takes the bare
-# word null, which is why the fallback is not an empty string.
+# word null, which is why the fallback is not an empty string. Validate the
+# output before it reaches --argjson: malformed output must degrade to "no
+# pull request", never abort the walkthrough with a jq parse error.
 pr="$(gh pr view --json number,title,body 2>/dev/null)"
-[ -n "$pr" ] || pr=null
+if [ -z "$pr" ] || ! printf '%s' "$pr" | jq -e . >/dev/null 2>&1; then
+  pr=null
+fi
 
 jq -n \
   --arg branch "$branch" \

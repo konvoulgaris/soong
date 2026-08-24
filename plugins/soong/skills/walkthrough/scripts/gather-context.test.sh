@@ -145,6 +145,54 @@ check "detached HEAD exits non-zero" "yes" "$([ "$code" -ne 0 ] && echo yes || e
 check "detached HEAD prints no stdout" "" "$(cd "$repo" && bash "$script" 2>/dev/null)"
 check "detached HEAD explains itself" "yes" "$(has "$(stderr_of "$repo")" 'detached')"
 
+# --- the pull request path ---------------------------------------------------
+
+# Every check above runs with a failing gh stub, so the populated pull request
+# path stays unexercised. Swap in a stub that answers both call shapes.
+repo="$tmp/withpr"
+make_repo "$repo"
+git -C "$repo" checkout -q -b feature
+echo two > "$repo/b.txt"
+git -C "$repo" add b.txt
+git -C "$repo" commit -q -m "feat: add b"
+
+cat > "$tmp/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *baseRefName*) echo "main" ;;
+  *number,title,body*)
+    # Real gh escapes newlines inside the body. cat, not printf: printf would
+    # expand the \n and emit invalid JSON.
+    cat <<'JSON'
+{"number":42,"title":"feat: add b","body":"* First bullet\n* Second \"quoted\" bullet"}
+JSON
+    ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$tmp/bin/gh"
+
+json="$(cd "$repo" && bash "$script" 2>/dev/null)"
+check "with a PR exits 0" 0 "$(cd "$repo" && bash "$script" >/dev/null 2>&1; echo $?)"
+check "with a PR output is valid JSON" 0 "$(printf '%s' "$json" | jq -e . >/dev/null 2>&1; echo $?)"
+check "PR number is carried" 42 "$(printf '%s' "$json" | jq -r '.pr.number')"
+check "PR title is carried" "feat: add b" "$(printf '%s' "$json" | jq -r '.pr.title')"
+check "PR body keeps its newline" 2 \
+  "$(printf '%s' "$json" | jq -r '.pr.body' | grep -c '^\*')"
+check "PR body keeps its quotes" "yes" \
+  "$(has "$(printf '%s' "$json" | jq -r '.pr.body')" 'Second "quoted" bullet')"
+check "base comes from the PR" "main" "$(printf '%s' "$json" | jq -r .base)"
+
+# Malformed gh output must degrade to "no pull request", never abort the run
+# with a jq parse error. The walkthrough is still useful without a PR.
+printf '#!/usr/bin/env bash\ncase "$*" in *baseRefName*) echo main ;; *) echo "not json at all" ;; esac\n' \
+  > "$tmp/bin/gh"
+chmod +x "$tmp/bin/gh"
+json="$(cd "$repo" && bash "$script" 2>/dev/null)"
+check "malformed gh output still exits 0" 0 "$(cd "$repo" && bash "$script" >/dev/null 2>&1; echo $?)"
+check "malformed gh output yields valid JSON" 0 "$(printf '%s' "$json" | jq -e . >/dev/null 2>&1; echo $?)"
+check "malformed gh output degrades to null pr" "true" "$(printf '%s' "$json" | jq -r '.pr == null')"
+
 echo
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1
