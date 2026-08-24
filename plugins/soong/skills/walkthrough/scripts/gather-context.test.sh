@@ -115,6 +115,36 @@ json="$(cd "$repo" && bash "$script" 2>/dev/null)"
 check "spaced path survives" "yes" \
   "$(has "$(printf '%s' "$json" | jq -r '.files[].path')" 'some dir/file name.txt')"
 
+# --- worktrees ---------------------------------------------------------------
+
+# The plugin is developed inside linked worktrees, so the script must resolve
+# branch and base from within one. `git rev-parse --show-toplevel` would return
+# the worktree directory here, which is why the script never calls it.
+repo="$tmp/wt-main"
+make_repo "$repo"
+if git -C "$repo" worktree add -q -b wt-feature "$tmp/wt-linked" >/dev/null 2>&1; then
+  echo change > "$tmp/wt-linked/c.txt"
+  git -C "$tmp/wt-linked" add c.txt
+  git -C "$tmp/wt-linked" commit -q -m "feat: from a worktree"
+  json="$(cd "$tmp/wt-linked" && bash "$script" 2>/dev/null)"
+  check "worktree exits 0" 0 "$(cd "$tmp/wt-linked" && bash "$script" >/dev/null 2>&1; echo $?)"
+  check "worktree branch resolves" "wt-feature" "$(printf '%s' "$json" | jq -r .branch)"
+  check "worktree base resolves" "main" "$(printf '%s' "$json" | jq -r .base)"
+  check "worktree sees its commit" 1 "$(printf '%s' "$json" | jq '.commits | length')"
+else
+  echo "skip - worktree checks (git worktree add failed)"
+fi
+
+# Detached HEAD has no branch name to report, so the script must refuse rather
+# than emit an empty or bogus branch.
+repo="$tmp/detached"
+make_repo "$repo"
+git -C "$repo" checkout -q --detach HEAD
+code="$(cd "$repo" && bash "$script" >/dev/null 2>&1; echo $?)"
+check "detached HEAD exits non-zero" "yes" "$([ "$code" -ne 0 ] && echo yes || echo no)"
+check "detached HEAD prints no stdout" "" "$(cd "$repo" && bash "$script" 2>/dev/null)"
+check "detached HEAD explains itself" "yes" "$(has "$(stderr_of "$repo")" 'detached')"
+
 echo
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1
