@@ -49,13 +49,18 @@ a place to stop and ask.
    1. The pull request description. Each bullet is one candidate. A person
       wrote these bullets, so the granularity is already correct.
    2. The diff. A file with large churn that no bullet covers is one candidate.
-      Mark this candidate as absent from the pull request description.
+      When a pull request description exists, mark this candidate as absent
+      from the description.
    3. The commit subjects. Use the subjects to name and to group candidates.
       Never make a commit subject a step on its own.
 
    Read the pull request and the diff every time. The pull request sets the
    outline. The diff catches the condition where the description is out of
    date.
+
+   When `pr` is `null`, the diff and the commit subjects supply the whole
+   outline. Say so in the opening message, and mark no candidate as absent
+   from a description that does not exist.
 
 3. **Apply the scope argument.** When the user gives an argument, keep only the
    candidates that match the argument. The argument can name an area, a path,
@@ -69,7 +74,23 @@ a place to stop and ask.
    closing step named `Also changed`, with one line for each item. Never drop a
    change in silence.
 
-5. **Read the code for a step at the time you reach that step.** Do not read
+   Use `Also changed` only for candidates that the cap or the scope excluded.
+   Below the cap and with no scope argument, every candidate gets a full step
+   and the closing step does not appear.
+
+5. **Order the steps for a reader, not by rank.** Blast radius selects the
+   steps. Blast radius does not order them. Put each step after the step it
+   depends on, so that the walkthrough reads in dependency order:
+
+   * A new module comes before the code that calls the module.
+   * A schema or a contract comes before the code that reads it.
+   * A test comes after the behaviour that the test covers.
+   * A version bump, a lock file, and generated output come last.
+
+   When two steps have no dependency between them, put the step with the
+   larger blast radius first.
+
+6. **Read the code for a step at the time you reach that step.** Do not read
    each file before step 1. Use `git diff` on the one file that the current
    step covers.
 
@@ -112,7 +133,11 @@ Next, or expand this one?
    click the reference. Give a second reference only when the change spans two
    places.
 5. For a step that comes from the diff and not from the pull request
-   description, add one line: `Not in the PR description.`
+   description, add one line: `Not in the PR description.` This line marks
+   drift between the description and the code, so add the line only when a
+   description exists to drift from. When `pr` is `null`, every step comes
+   from the diff, the line carries no information, and every step must omit
+   the line.
 6. End with an offer to continue or to expand.
 
 Understanding a change is understanding a delta. An inventory of what changed
@@ -128,6 +153,15 @@ Open with two lines, and then step 1 in the same message:
 Say "next" to continue, or ask about anything.
 
 Step 1 of 5: ...
+```
+
+When the branch has no pull request, name the source instead of a split:
+
+```
+4 steps, from the diff and the commits. This branch has no PR.
+Say "next" to continue, or ask about anything.
+
+Step 1 of 4: ...
 ```
 
 Present one step and wait. The user has four options:
