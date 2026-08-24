@@ -30,6 +30,33 @@ git rev-parse --verify -q "$base" >/dev/null 2>&1 \
 count="$(git rev-list --count "$base..HEAD" 2>/dev/null)"
 [ "${count:-0}" -gt 0 ] || die "no commits on $branch against $base"
 
-printf '{"branch":%s,"base":%s}\n' \
-  "$(printf '%s' "$branch" | jq -Rs .)" \
-  "$(printf '%s' "$base" | jq -Rs .)"
+# Commit subjects, newest first. jq -Rs splits on newlines and quotes each one.
+commits="$(git log --format='%h %s' "$base..HEAD" 2>/dev/null \
+  | jq -Rs 'split("\n") | map(select(length > 0))')"
+
+# Churn per file. git prints "-" for binary files, so map that to 0 and keep
+# the field a number: the skill ranks on these values. Rebuild the path from
+# field 3 onward, because a path may itself contain a tab.
+files="$(git diff --numstat "$base...HEAD" 2>/dev/null | jq -Rs '
+  split("\n")
+  | map(select(length > 0))
+  | map(split("\t"))
+  | map(select(length >= 3))
+  | map({
+      path: (.[2:] | join("\t")),
+      added: (if .[0] == "-" then 0 else (.[0] | tonumber) end),
+      removed: (if .[1] == "-" then 0 else (.[1] | tonumber) end)
+    })')"
+
+# No pull request is a normal result, not a failure. --argjson takes the bare
+# word null, which is why the fallback is not an empty string.
+pr="$(gh pr view --json number,title,body 2>/dev/null)"
+[ -n "$pr" ] || pr=null
+
+jq -n \
+  --arg branch "$branch" \
+  --arg base "$base" \
+  --argjson pr "$pr" \
+  --argjson commits "$commits" \
+  --argjson files "$files" \
+  '{branch: $branch, base: $base, pr: $pr, commits: $commits, files: $files}'

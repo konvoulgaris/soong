@@ -61,6 +61,60 @@ check "no commits against base exits non-zero" "yes" \
 check "no commits against base explains itself" "yes" \
   "$(has "$(stderr_of "$repo")" 'no commits')"
 
+# --- happy path --------------------------------------------------------------
+
+# A feature branch with two commits, one of which has a quote and a backslash
+# in its subject. Nothing here may break the JSON.
+repo="$tmp/feature"
+make_repo "$repo"
+git -C "$repo" checkout -q -b feature
+echo two > "$repo/b.txt"
+git -C "$repo" add b.txt
+git -C "$repo" commit -q -m 'feat: add "quoted" \ thing'
+printf 'three\nfour\n' >> "$repo/a.txt"
+git -C "$repo" add a.txt
+git -C "$repo" commit -q -m "fix: extend a"
+
+json="$(cd "$repo" && bash "$script" 2>/dev/null)"
+check "happy path exits 0" 0 "$(cd "$repo" && bash "$script" >/dev/null 2>&1; echo $?)"
+check "output is valid JSON" 0 "$(printf '%s' "$json" | jq -e . >/dev/null 2>&1; echo $?)"
+check "branch is reported" "feature" "$(printf '%s' "$json" | jq -r .branch)"
+check "base is reported" "main" "$(printf '%s' "$json" | jq -r .base)"
+check "commit count" 2 "$(printf '%s' "$json" | jq '.commits | length')"
+check "quoted subject survives" "yes" \
+  "$(has "$(printf '%s' "$json" | jq -r '.commits[]')" 'add "quoted" \\ thing')"
+check "file count" 2 "$(printf '%s' "$json" | jq '.files | length')"
+check "churn is recorded" 2 \
+  "$(printf '%s' "$json" | jq '[.files[] | select(.path == "a.txt")] | .[0].added')"
+# The key must be present and null. An absent key also reads as null through
+# `.pr`, so assert on has("pr") too or this check passes vacuously.
+check "pr key is present" "true" "$(printf '%s' "$json" | jq -r 'has("pr")')"
+check "no pull request is null" "true" "$(printf '%s' "$json" | jq -r '.pr == null')"
+
+# A binary file reports churn as 0 rather than git's "-", which is not a number.
+repo="$tmp/binary"
+make_repo "$repo"
+git -C "$repo" checkout -q -b feature
+printf '\x00\x01\x02\x03' > "$repo/blob.bin"
+git -C "$repo" add blob.bin
+git -C "$repo" commit -q -m "chore: add a binary"
+json="$(cd "$repo" && bash "$script" 2>/dev/null)"
+check "binary file yields valid JSON" 0 "$(printf '%s' "$json" | jq -e . >/dev/null 2>&1; echo $?)"
+check "binary churn is numeric" "number" \
+  "$(printf '%s' "$json" | jq -r '.files[0].added | type')"
+
+# A path with a space must arrive intact.
+repo="$tmp/spaces"
+make_repo "$repo"
+git -C "$repo" checkout -q -b feature
+mkdir -p "$repo/some dir"
+echo x > "$repo/some dir/file name.txt"
+git -C "$repo" add .
+git -C "$repo" commit -q -m "chore: spaced path"
+json="$(cd "$repo" && bash "$script" 2>/dev/null)"
+check "spaced path survives" "yes" \
+  "$(has "$(printf '%s' "$json" | jq -r '.files[].path')" 'some dir/file name.txt')"
+
 echo
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1
