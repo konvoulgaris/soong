@@ -72,27 +72,41 @@ rediscovering the codebase from zero.
 Invoke the `adversarial-council` skill with cobrain's findings, the spec path,
 the pull request stack, and the files each finding touches.
 
-The council sends the findings to two `adversarial-judge` agents on different
-evidence, argues out the disagreements, and returns three things: the findings
-that need a decision from the user, the fixes it applied to the spec on its own,
-and a notice for any `blocking` finding it dropped.
+For that last one, use the finding's own **Where** field. Cobrain may give only
+a spec section or a PR number there, so when a finding names no files, pass the
+files that PR touches from Step 3. The verifier lens is only as good as this
+input, and the architect lens is forbidden from reading the implementation, so a
+verifier left to guess is not backstopped by the other judge.
 
-The council can decline to run. With no findings there is nothing to filter.
-With more than eight it says the spec needs rework instead, and hands every
-finding back unfiltered. Step 4 handles both.
+The council sends the findings to two `adversarial-judge` agents on different
+evidence, argues out the disagreements, and returns four things: the findings
+that need a decision from the user, the fixes it applied to the spec on its own,
+a notice for any `blocking` finding it dropped, and a count of the findings it
+dropped silently.
+
+The council can hand everything back instead of filtering. With no findings
+there is nothing to filter. With more than eight it says the spec needs rework.
+If both judges fail it reports the failure. In each case every finding comes
+back unfiltered, and Step 4 walks them.
 
 ## Step 4: Address the review with the user, before Notion
 
 Walk a queue **one at a time**. Which queue depends on Step 3.5:
 
-* **The council ran.** Walk the council's queue, in the order the council gives.
-* **The council did not run**, because the findings were over the cap or because
-  both judges failed. Walk the full cobrain finding set, in cobrain's priority
-  order.
+* **The council returned a queue.** Walk it in the order the council gives.
+* **The council handed the findings back unfiltered**, because they were over
+  the cap or because both judges failed. Walk the full cobrain finding set, in
+  cobrain's priority order.
 
-An empty council queue means the council resolved everything. Say so, list the
-fixes the council applied, and go to Step 5. An empty cobrain finding set means
-the same without a council.
+Before walking either queue, relay every notice the council gave for a
+`blocking` finding it dropped, and its count of findings dropped silently. The
+notices are not questions and do not wait for an answer, but a swallowed blocker
+the user never hears about is the one thing the notice exists to prevent.
+
+An empty council queue means the council resolved everything. Say so, relay the
+notices and the count, list the fixes the council applied, and go to Step 5.
+That path is the one where the user sees nothing else, so the notices matter
+most there. An empty cobrain finding set means the same without a council.
 
 For each finding in whichever queue you are walking:
 
