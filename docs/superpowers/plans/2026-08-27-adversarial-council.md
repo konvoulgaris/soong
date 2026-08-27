@@ -245,19 +245,26 @@ legitimacy is stated rather than implied.
 Every finding you were given gets exactly one verdict. Do not skip one, and do
 not invent one.
 
-* `drop` - not real, already handled in the codebase, or too minor to spend
-  anyone's attention on.
+* `drop` - not real, already handled, or too minor to spend anyone's attention
+  on. Judge this from your own lens's evidence. The verifier lens may drop on
+  what the code does. The architect lens drops on design grounds alone, and
+  never on a claim about code it has not read.
 * `auto-resolve` - real, and one fix is obviously correct. State the fix.
 * `needs-user` - real, and resolving it needs a decision the user owns: a
   tradeoff with no dominant answer, a scope or priority call, a product
   question, or a risk only the user can accept.
-* `abstain` - you cannot judge this from your lens's evidence. State what you
-  would need.
+* `abstain` - you cannot judge this from your lens's evidence, either because
+  the evidence does not reach the finding or because it reaches it and does not
+  settle it. State what you would need.
 
 `abstain` is a real answer and not a failure. A guess dressed as a verdict is
 worse than an abstention, because the council treats agreement as decisive and
-your guess may be the half that agrees. Use it when your lens genuinely does
-not reach the finding.
+your guess may be the half that agrees. Use it when your lens does not reach the
+finding, and equally when it reaches the finding and does not settle it.
+
+When you cannot tell whether a finding is too minor to matter or simply beyond
+your lens, abstain. A shared `drop` ends the finding; an abstention only sends
+it to the user.
 
 With each verdict:
 
@@ -334,7 +341,10 @@ Return the verdicts first, in the order the findings were given to you, then
 the Interactions list. No preamble, no summary of the spec, no praise.
 
 For each finding: its identifier, your verdict, your reasoning, and your
-question when the verdict is `needs-user`.
+question when the verdict is `needs-user`. Use the identifier the findings
+carry, and their position in the order you were given when they carry none. The
+council aligns your verdicts with the other judge's by this, so an identifier
+you invented is worse than a number.
 
 When you were dispatched for a rebuttal round, you receive a subset of the
 findings and the other judge's verdict and reasoning for each. Keep your lens.

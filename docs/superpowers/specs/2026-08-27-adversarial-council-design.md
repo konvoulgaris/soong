@@ -115,10 +115,14 @@ true of the codebase as it stands?
 
 **Architect lens.** Receives the spec, the findings, and the pull request stack
 with its order and stated dependencies. It answers from the design: does
-resolving this change what gets built, or only how a step gets built?
+resolving this change what gets built, or only how a step gets built? It does
+not read the implementation, including to check whether a finding is true. A
+finding it cannot judge from the stack alone is an abstention.
 
 Both lenses answer the same question and return the same shape. The lens changes
-the evidence, not the job.
+the evidence, not the job. Each lens's evidence is a closed set, and a judge
+that reaches outside it produces agreement that carries no information, which is
+the one thing the two-lens design exists to prevent.
 
 ### Rationale for lenses over roles
 
@@ -134,15 +138,20 @@ than different roles is what makes agreement mean something.
 ### Output per finding
 
 * **Verdict**, one of:
-  * `drop` - not real, already handled in the codebase, or too minor to spend
-    anyone's attention on.
+  * `drop` - not real, already handled, or too minor to spend anyone's
+    attention on. Judged from this lens's evidence: the verifier lens may drop
+    on what the code does, and the architect lens drops on design grounds
+    alone, never on a claim about the code it has not read.
   * `auto-resolve` - real, and one fix is obviously correct. The judge states
     the fix.
   * `needs-user` - real, and resolving it needs a decision the user owns: a
     tradeoff with no dominant answer, a scope or priority call, a product
     question, or a risk only the user can accept.
-  * `abstain` - cannot judge from this lens's evidence. The judge states what it
-    would need.
+  * `abstain` - cannot judge from this lens's evidence, either because the
+    evidence does not reach the finding or because it reaches it and does not
+    settle it. The judge states what it would need. When unsure whether a
+    finding is too minor to matter or simply beyond the lens, abstain: a shared
+    `drop` ends the finding, and an abstention only escalates it.
 * **Reasoning**, one or two sentences, from this lens's evidence.
 * **The question**, only when the verdict is `needs-user`. The decision, written
   as a question, with its options. The user sees this text, so the judge writes
