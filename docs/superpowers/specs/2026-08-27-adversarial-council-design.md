@@ -267,8 +267,11 @@ agreement.
 A finding that a judge did not return a verdict for counts as `abstain`. A
 verdict for a finding that cobrain did not report is discarded.
 
-Only rules 3 and 4 can produce agreement or a rebuttal, so the four verdict
-values give the same four outcomes for every one of the sixteen pairs.
+The four rules cover all sixteen pairs of the four verdict values, and order
+resolves the two pairs that match more than one rule. One pair, both `abstain`,
+takes rule 1. Six pairs where exactly one judge abstains take rule 2. Three
+pairs, both `drop`, both `auto-resolve`, or both `needs-user`, take rule 3. The
+remaining six pairs take rule 4.
 
 ### Using the Interactions lists
 
