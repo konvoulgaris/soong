@@ -170,7 +170,13 @@ Do not drop:
 
 - Step 1's three triggers, including `stopped`, and the sentence saying to read
   the branch from the ledger rather than deriving it.
-- Step 3's two worked examples and the definition of "contradicted".
+- Step 3's two worked examples, the definition of "contradicted", **and both
+  closing paragraphs**: the one saying a contradiction records `stopped` with
+  which answer and what contradicts it and leaves later tasks `pending`, and the
+  one saying the check is a no-op on the first task built. The first is the only
+  writer of `stoppedBecause` in the whole skill; without it step 3 detects a
+  contradiction and does nothing. Without the second, the first task looks like a
+  spurious stop.
 - Step 4's instruction to write the plan file outside the repository.
 - Step 5's two suppression paragraphs: `finishing-a-development-branch` is not
   followed, and the inherited final reviewer is allowed to run.
@@ -253,6 +259,8 @@ otherwise only ask an implementer to trust:
 
 ```bash
 f=plugins/soong/skills/develop/SKILL.md
+# The asserted numbers count the header and separator rows too, so they are the
+# data-row count plus two: 21 failure modes -> 23, 9 ledger fields -> 11.
 sed -n '/^## Failure modes/,/^## Rules/p' "$f" | grep -c '^| ' | grep -qx 23 \
   && echo "ok: 21 failure-mode rows" || echo "WRONG: failure-mode row count"
 sed -n '/^| Field |/,/^$/p' "$f" | grep -c '^| ' | grep -qx 11 \
@@ -269,7 +277,7 @@ grep -qF -- '--notion-card' "$f" && echo "ok: names --notion-card" || echo "MISS
 grep -qF -- '--state all' "$f" && echo "ok: --state all" || echo "MISSING: --state all, a closed PR would open a second"
 grep -qF 'git push -u origin' "$f" && echo "ok: pushes" || echo "MISSING: push, gh pr create would fail"
 grep -qF '"worktree":' "$f" && echo "ok: ledger has a worktree field" || echo "MISSING: worktree field"
-grep -qF '- The task is `stopped`' "$f" && echo "ok: stopped is a loop step 1 trigger" || echo "MISSING: stopped trigger"
+grep -qF -- '- The task is `stopped`' "$f" && echo "ok: stopped is a loop step 1 trigger" || echo "MISSING: stopped trigger"
 grep -qF 'Do not resume it at any step' "$f" && echo "ok: stopped is settled" || echo "MISSING: stopped disposition"
 ```
 
