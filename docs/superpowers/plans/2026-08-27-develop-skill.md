@@ -145,11 +145,18 @@ Every sub-clause matters and several exist because a review round found their
 absence produced a wrong outcome. Do not drop:
 
 - Step 1's four exit codes and the Notion MCP reachability sentence.
-- Step 2's **two** checks in order, count then correspondence, and the sentence
-  saying correspondence is a judgment call rather than string equality.
+- Step 2's **two** checks in order, count then correspondence, the sentence
+  saying correspondence is a judgment call rather than string equality, and the
+  closing paragraph that says what a stop does: show the two lists side by side,
+  say which entries could not be mapped, ask, and do not guess an order. That
+  paragraph is the only place the consequence of a failed check is specified.
 - Step 3's "Known ceiling" paragraph and the trust-asymmetry paragraph, plus the
   rule that a "stacks on" statement naming no task stops the step.
-- Step 4's "Hold the answers in the conversation for now" paragraph.
+- Step 4's three paragraphs, all of them: "Show the whole list, including the
+  tasks with no gaps", which is what lets the user add a question the pass
+  missed; the "inline, one at a time" paragraph forbidding batching and
+  forbidding a design document, which is the whole of decisions 3 and 8; and
+  "Hold the answers in the conversation for now".
 - Step 5's worktree-reuse check, the lost-answers sentence, and the `.gitignore`
   paragraph.
 - Step 6's paragraph explaining why the branch name is recorded now.
@@ -167,13 +174,23 @@ Do not drop:
 - Step 4's instruction to write the plan file outside the repository.
 - Step 5's two suppression paragraphs: `finishing-a-development-branch` is not
   followed, and the inherited final reviewer is allowed to run.
+- Step 2's sentence that the branch name is already recorded, so it writes the
+  status only.
 - Step 6 as its own step, with the sentence saying why.
 - All four bullets of step 7's compose invocation.
+- Step 8's Notion status paragraph in full: read the card's own options, pick the
+  match, skip and say so when nothing matches, and never guess a Notion value.
+  A step 8 transcribed as a bare "mark the task done" would still pass the
+  step-count check.
 
 - [ ] **Step 6: Write the Resume section and the interrupted-work subsection**
 
 Copy the spec's `## Resume` section verbatim, all seven bullets plus the closing
-line, and its `### A task that was interrupted` subsection verbatim including
+line. Six bullets are labelled `Step 1` through `Step 6`; the seventh is
+`--draft on a resume`, which overrides no numbered step and is therefore the one
+easiest to miss when mapping bullets onto first-run steps. Transcribe it too.
+
+Then its `### A task that was interrupted` subsection verbatim, including
 the fenced command block, the `--state all` paragraph, the "Unpushed commits"
 definition paragraph, all three state bullets, the never-delete paragraph, and
 the closing `stopped` paragraph.
@@ -184,15 +201,29 @@ Copy the spec's `## The ledger` section verbatim: the file path, the project-key
 bash block, the JSON shape, the nine-row field table, the idempotent-merge
 sentence, and the two things it does not do.
 
-Then copy the spec's `## Failure modes` table verbatim, all sixteen rows, and its
-`## Rules` list verbatim.
+Then copy the spec's `## Failure modes` table verbatim, all **21** data rows, and
+its `## Rules` list verbatim, all **10** bullets.
+
+Count them in the spec rather than trusting these numbers:
+
+```bash
+spec=docs/superpowers/specs/2026-08-27-develop-skill-design.md
+sed -n '/^## Failure modes/,/^## Rules/p' "$spec" | grep -c '^| '   # 23: 21 rows + header + separator
+sed -n '/^## Rules/,/^## Verification/p' "$spec" | grep -c '^- '     # 10
+```
+
+The five tail rows are the ones most easily lost, and each was added by a review
+round: the `--draft`-on-resume disagreement, a recorded worktree gone on resume, a
+task in Notion the ledger's order lacks, no matching card status option, and the
+pull-request guard hook denying `gh`.
 
 - [ ] **Step 8: Verify structurally**
 
 ```bash
 f=plugins/soong/skills/develop/SKILL.md
 grep -q '^name: develop$' "$f" && echo "ok: name" || echo "MISSING: name"
-grep -q '/develop' "$f" && echo "ok: triggers on /develop" || echo "MISSING: trigger"
+grep -q '^description:.*/develop' "$f" && echo "ok: description triggers on /develop" || echo "MISSING: /develop in the description"
+grep -q '^description:.*roadmap item' "$f" && echo "ok: description names a roadmap item" || echo "MISSING: trigger phrase"
 for s in '## Arguments' '## Names' '## First run' '## The per-task loop' '## Resume' '## The ledger' '## Failure modes' '## Rules'; do
   grep -qF "$s" "$f" && echo "ok: $s" || echo "MISSING: $s"
 done
@@ -207,8 +238,25 @@ first=$(grep -n '^## First run' "$f" | cut -d: -f1)
 loop=$(grep -n '^## The per-task loop' "$f" | cut -d: -f1)
 [ "$names" -lt "$first" ] && echo "ok: Names precedes First run" || echo "WRONG ORDER: Names must precede First run"
 [ "$first" -lt "$loop" ] && echo "ok: First run precedes the loop" || echo "WRONG ORDER"
-sed -n "${loop},\$p" "$f" | grep -cE '^[0-9]+\. \*\*' | grep -qx 8 \
+resume=$(grep -n '^## Resume' "$f" | cut -d: -f1)
+sed -n "${first},$((loop-1))p" "$f" | grep -cE '^[0-9]+\. \*\*' | grep -qx 6 \
+  && echo "ok: first run has 6 steps" || echo "WRONG: first-run step count is not 6"
+sed -n "${loop},$((resume-1))p" "$f" | grep -cE '^[0-9]+\. \*\*' | grep -qx 8 \
   && echo "ok: loop has 8 steps" || echo "WRONG: loop step count is not 8"
+```
+
+Both counts are bounded by the next heading rather than running to end of file.
+An unbounded count would inflate if any later section introduced a numbered list.
+
+Row counts for the two tables, which the numeric assertions in Steps 6 and 7
+otherwise only ask an implementer to trust:
+
+```bash
+f=plugins/soong/skills/develop/SKILL.md
+sed -n '/^## Failure modes/,/^## Rules/p' "$f" | grep -c '^| ' | grep -qx 23 \
+  && echo "ok: 21 failure-mode rows" || echo "WRONG: failure-mode row count"
+sed -n '/^| Field |/,/^$/p' "$f" | grep -c '^| ' | grep -qx 11 \
+  && echo "ok: 9 ledger field rows" || echo "WRONG: ledger field row count"
 ```
 
 The specific clauses whose absence a plain "file exists" check would miss, each
@@ -220,8 +268,9 @@ grep -qF -- '--base' "$f" && echo "ok: names --base" || echo "MISSING: --base, t
 grep -qF -- '--notion-card' "$f" && echo "ok: names --notion-card" || echo "MISSING: --notion-card"
 grep -qF -- '--state all' "$f" && echo "ok: --state all" || echo "MISSING: --state all, a closed PR would open a second"
 grep -qF 'git push -u origin' "$f" && echo "ok: pushes" || echo "MISSING: push, gh pr create would fail"
-grep -qF 'worktree' "$f" && echo "ok: names the worktree field" || echo "MISSING: worktree"
-grep -qiF 'stopped' "$f" && echo "ok: handles stopped" || echo "MISSING: stopped"
+grep -qF '"worktree":' "$f" && echo "ok: ledger has a worktree field" || echo "MISSING: worktree field"
+grep -qF '- The task is `stopped`' "$f" && echo "ok: stopped is a loop step 1 trigger" || echo "MISSING: stopped trigger"
+grep -qF 'Do not resume it at any step' "$f" && echo "ok: stopped is settled" || echo "MISSING: stopped disposition"
 ```
 
 Newline-tolerant checks, for sentences that wrap. A single-line literal for a
@@ -490,18 +539,43 @@ Before:
   session.
 ```
 
-After: delete both lines. Nothing replaces them; `develop` needs no new
-requirement entry, because `superpowers` and the Notion MCP are already listed.
+After: delete both lines. They are a self-contained bullet between the
+`superpowers` and `Notion MCP` entries, so deleting them leaves a valid list.
+Nothing replaces them: `develop` needs no new requirement entry, because
+`superpowers` and the Notion MCP are already listed.
 
 - [ ] **Step 7: Verify no reference survives**
 
+A bare `grep -rn 'handoff'` does **not** work here, and this is worth
+understanding before writing a check of your own. Three correct pieces of prose
+contain the word: Step 4's replacement text says "That is the whole handoff" and
+"no handoff document", and Task 1 writes "it replaces the handoff document
+`architect` used to end with" into the new skill. A check that flags those would
+be unsatisfiable without rewording the deliverable, which this plan forbids.
+
+Grep for the stale **constructs** instead. Note `handoff doc path`, not
+`handoff doc`: the shorter pattern matches "handoff document" inside both
+legitimate sentences, so it flags correct work exactly as a bare `handoff` grep
+does. This pattern was tested in both directions, against the pre-edit files
+where it must hit all five references, and against the post-edit text where it
+must be silent:
+
 ```bash
-grep -rn 'handoff' plugins/ README.md && echo "STALE REFERENCE ABOVE" || echo "ok: no handoff reference"
-grep -n 'hand off' plugins/soong/skills/architect/SKILL.md && echo "CHECK the hits above" || echo "ok: no 'hand off' prose"
+grep -rEn '`handoff` skill|handoff doc path|handoff prompt|write the handoff document' \
+  plugins/ README.md \
+  && echo "STALE REFERENCE ABOVE" || echo "ok: no stale handoff reference"
 ```
 
-The second check is expected to hit the `## Step 6: Hand off` heading, which
-stays. Any other hit is stale text.
+Then the prose check, case-insensitively, because the heading is capitalized and
+a case-sensitive grep would miss it and report success for the wrong reason:
+
+```bash
+grep -in 'hand off' plugins/soong/skills/architect/SKILL.md
+```
+
+Expected: exactly one hit, the `## Step 6: Hand off` heading, which stays. Zero
+hits means Step 4 removed the heading, which it should not. Two or more means
+stale prose survives.
 
 ```bash
 f=plugins/soong/skills/architect/SKILL.md
@@ -584,8 +658,13 @@ it. A defect at this stage may be in this plan rather than in the work.
 
 - [ ] **Step 1: Every structural check from every task, re-run together**
 
-Re-run the verification blocks from Tasks 1, 2, 3, and 4. All must pass on the
-final state, not just at the moment each task ran.
+Re-run the verification blocks from Task 1 Step 8, Task 2 Step 5, Task 3 Step 7,
+and Task 4 **Step 2**. All must pass on the final state, not just at the moment
+each task ran.
+
+Task 4 Step 2, not Step 1: Step 1 is the mutation, and its
+`assert d["version"] == "0.8.0"` fires once the bump has landed. Running it again
+stops on a spurious assert.
 
 - [ ] **Step 2: The three pre-existing test suites**
 
@@ -597,9 +676,10 @@ bash plugins/soong/skills/architect-setup/scripts/architect-setup.test.sh
 bash plugins/soong/skills/walkthrough/scripts/gather-context.test.sh
 ```
 
-All three must exit 0, with the **same test counts** as on `main`. This change
-adds no script, so any count change is a finding. Find them yourself rather than
-trusting this list if one is missing:
+All three must exit 0. `pr-guard` reports **60 passed**; the other two print
+"all checks passed" without a count. This change adds no script, so any change
+in those outputs is a finding. Find them yourself rather than trusting this list
+if one is missing:
 
 ```bash
 find plugins -name '*.test.sh'
