@@ -18,7 +18,8 @@ stack builds unattended.
 **In scope**
 
 - A new skill at `plugins/soong/skills/develop/SKILL.md`.
-- Two new arguments on `manage-pr` compose mode: `--base` and `--notion-card`.
+- Three new arguments on `manage-pr` compose mode: `--base`, `--notion-card`, and
+  `--draft`.
 - A change to `architect` Step 6: print `/develop <url>` instead of writing a
   handoff document.
 - A ledger file so a stopped stack resumes instead of restarting.
@@ -192,6 +193,16 @@ earlier step can stop for free.
 
 5. **Create the worktree.** One worktree for the whole stack, off `main`.
 
+   Check `git worktree list` for one already named for this roadmap item before
+   creating one. A previous run can have died between this step and step 6,
+   leaving a worktree on disk with no ledger entry to point at it. Reuse it and
+   say so. Without this check that run's worktree is orphaned and a second one is
+   created beside it.
+
+   That crash also means the gap questions get asked again, since a run with no
+   ledger entry is a first run by definition. Say plainly that the earlier answers
+   were lost, rather than re-asking as though nothing happened.
+
    Never run in the worktree the user is sitting in: branches advance in place
    here, and swapping a branch under an open editor is the failure this avoids.
 
@@ -206,16 +217,22 @@ earlier step can stop for free.
 
 For each unskipped task in stack order, in that one worktree:
 
-1. **Branch.** Off the previous unskipped task's branch. The first task built is
-   based on `main`. Name it `claude/<slug>` from the task title.
+1. **Check for interrupted work, before branching.** If this task is
+   `in-progress`, or is `pending` with its branch already in the repository, a
+   previous run died inside it. Do not create a second branch, do not force
+   anything, and do not fall through to the next step: go to "A task that was
+   interrupted" and resolve it there first.
 
-   The branch may already exist, from a run that died mid-task. Do not create a
-   second one and do not force anything: see "A task that was interrupted" below.
+   This check owns the collision. Step 3's re-check and everything after it
+   assume a branch this run created.
+
+2. **Branch.** Off the previous unskipped task's branch. The first task built is
+   based on `main`. Name it `claude/<slug>` from the task title.
 
    Mark the task `in-progress` in the ledger with its branch name, before any
    work happens on it.
 
-2. **Re-check the answers.** Read the diff the stack has built so far,
+3. **Re-check the answers.** Read the diff the stack has built so far,
    `git diff main...HEAD`, and check this task's recorded answers against it.
 
    An answer is **contradicted** when the built code makes it false or
@@ -234,7 +251,7 @@ For each unskipped task in stack order, in that one worktree:
    This check is a no-op on the first task built, where the diff is empty. That
    is expected, since an answer cannot be contradicted by nothing.
 
-3. **Plan.** Invoke `superpowers:writing-plans` from the card plus its recorded
+4. **Plan.** Invoke `superpowers:writing-plans` from the card plus its recorded
    answers.
 
    The plan file it writes is a working artifact, not a deliverable. Write it
@@ -242,15 +259,21 @@ For each unskipped task in stack order, in that one worktree:
    any pull request's diff. `writing-plans` runs its own per-chunk review loop;
    let it, and do not skip it.
 
-4. **Implement.** Invoke `superpowers:subagent-driven-development` on that plan.
+5. **Implement.** Invoke `superpowers:subagent-driven-development` on that plan.
    Its own two stages, spec compliance then code quality, are the quality gate.
    This skill adds no review of its own and skips neither of those.
 
    That skill normally ends by invoking `finishing-a-development-branch`. Do not
-   follow that transition. Step 5 here is the finish for one task, and the stack
+   follow that transition. Step 6 here is the finish for one task, and the stack
    continues.
 
-5. **Push, then open the pull request.** Push the branch first:
+   It also dispatches a final reviewer over the whole implementation before that
+   transition. Let that run: per task it reviews the stack as built so far, which
+   is the state the next task will build on. It is a third review this skill
+   inherits rather than adds, and it is not one of the two per-task stages, so
+   the rule against skipping those does not cover it.
+
+6. **Push, then open the pull request.** Push the branch first:
    `git push -u origin <branch>`. `gh pr create` cannot open a pull request for a
    branch the remote does not have.
 
@@ -265,7 +288,7 @@ For each unskipped task in stack order, in that one worktree:
      afterward.
    - `--draft` only if the user passed `--draft`.
 
-6. **Record it.** Mark the task `done` in the ledger with its branch and pull
+7. **Record it.** Mark the task `done` in the ledger with its branch and pull
    request url.
 
    Then set the card's status. Read the card's own status options through the
@@ -289,6 +312,11 @@ Report what is already built, then continue. The differences from a first run:
 - **Step 3, skips:** the ledger's `skipped` wins. A `--skip` on a resume that
   does not match the recorded set stops rather than silently re-deciding: say
   which set is recorded and let the user choose.
+- **`--draft` on a resume:** the ledger's `draft` wins, so the stack stays
+  consistent with the pull requests already opened. A `--draft` that disagrees
+  with the recorded value is reported and ignored, not applied to the remaining
+  tasks: half a stack of drafts is worse than either whole. Say which value is
+  recorded, so the user can act on it themselves.
 - **Step 4, the gap pass:** does not run. The answers are in the ledger.
 - **Step 5, the worktree:** reuse the recorded path. Verify it exists and is a
   worktree of this repository. Missing, because the user removed it, create a new
@@ -302,13 +330,28 @@ below it.
 ### A task that was interrupted
 
 A task at `in-progress`, or at `pending` with a branch already in the repository,
-is one whose run died mid-task. Its commits may be partial and its pull request
-may not exist.
+is one whose run died mid-task. Its commits may be partial, and a pull request
+for it may already be open even though the ledger says `pr: null`.
 
-Do not delete it, force-push it, or start a second branch. Check the branch
-out, report what it already contains, and ask whether to continue on it or reset
-it. This is the one place where a resume is not automatic, because guessing
-wrong destroys work that is not recoverable from the ledger.
+**Check for an open pull request first**, before offering the user anything:
+
+```bash
+gh pr list --head <branch> --state open --json number,url
+```
+
+- **A pull request exists.** The run died between opening it and recording it.
+  Everything the loop does up to that point is already done, so do not re-run it:
+  `gh pr create` fails on a branch that already has an open pull request. Finish
+  the task instead, by doing loop step 7 alone, which records the found url and
+  sets the card status. Then continue to the next task.
+- **No pull request exists.** Check the branch out, report what it already
+  contains, and ask whether to continue on it or reset it.
+
+Do not delete the branch, force-push it, or start a second one. The no-pull-request
+case is the one place where a resume is not automatic, because guessing wrong
+destroys work that is not recoverable from the ledger. The other case is
+recoverable precisely because the pull request is on the remote, where `gh` can
+still see it.
 
 ## The ledger
 
@@ -357,13 +400,13 @@ Every field is written by a named step and read by a named step:
 | --- | --- | --- |
 | `order` | First run step 6 | Resume step 2, the loop |
 | `skipped` | First run step 6 | Resume step 3, the loop |
-| `answers` | First run step 6 | Loop step 2 |
-| `tasks[].status` | Loop steps 1, 2, 6 | Resume, to find the first task not `done` |
-| `tasks[].branch` | Loop step 1 | Loop step 1 of the next task, as its base |
-| `tasks[].pr` | Loop step 6 | Reported on resume |
-| `tasks[].stoppedBecause` | Loop step 2 | Reported on resume |
-| `worktree` | First run step 6, and resume step 5 if recreated | Resume step 5 |
-| `draft` | First run step 6 | Loop step 5 |
+| `answers` | First run step 6 | Loop steps 3 and 4 |
+| `tasks[].status` | Loop steps 2, 3, 7 | Resume, to find the first task not `done`; loop step 1 and the interrupted-task path |
+| `tasks[].branch` | Loop step 2 | Loop step 6, to push and to set `--base`; loop step 1 and the interrupted-task path, to detect a branch that already exists |
+| `tasks[].pr` | Loop step 7 | Reported on resume |
+| `tasks[].stoppedBecause` | Loop step 3 | Reported on resume |
+| `worktree` | First run step 6, and resume step 5 if recreated | Resume step 5, and every loop step, which all run inside it |
+| `draft` | First run step 6 | Loop step 6 |
 
 Merge into the file idempotently, the same way `manage-pr` writes the pull
 request record, so a concurrent run on another repository cannot lose an entry.
@@ -382,13 +425,23 @@ Compose mode gains two arguments. Both are additive, and both default to today's
 behavior when absent, so every existing caller is unaffected.
 
 - **`--base <branch>`** — pass `--base <branch>` to `gh pr create`. Absent, run
-  `gh pr create` as it does today and let `gh` choose the default branch. This
-  also binds the `<base>` placeholder already used in compose step 1, which is
-  currently unbound.
+  `gh pr create` as it does today and let `gh` choose the default branch.
+
+  This also binds the `<base>` placeholder already used in compose step 1, which
+  is currently unbound, and binding it there matters as much as binding it in the
+  `gh` call. Step 1 reads `git log --oneline <base>..HEAD` and
+  `git diff <base>...HEAD` to draft the title and description. Bound to the
+  previous task's branch, that is this task's own diff, which is what the pull
+  request should describe. Left unbound while only the `gh` call is fixed, every
+  pull request in the stack would be described from the whole stack's diff.
 - **`--notion-card <url-or-id>`** — use this card in the pull request record
   instead of resolving one. Absent, resolve as it does today. This does not
   license guessing: the caller supplies a card it already has, and the existing
   rule against inventing one is unchanged.
+- **`--draft`** — pass `--draft` to `gh pr create`, opening the pull request as a
+  draft. Absent, open it ready for review, which is today's behavior. Compose has
+  no draft argument today, so without this a caller asking for a draft would be
+  silently ignored.
 
 ## Changes to architect
 
@@ -429,7 +482,10 @@ than the first pull request only.
 | A "stacks on" statement naming no task | Stop at skip validation. Never read as "depends on nothing" |
 | A gap answer the built code contradicts | Stop at that task, ledger records why. Later tasks stay `pending` |
 | `subagent-driven-development` reports BLOCKED | Stop at that task. Never re-dispatch it unchanged, and never hand-fix it on the main thread |
-| A branch that already exists at loop step 1 | Stop and ask. Never force-push and never start a second branch |
+| A branch that already exists at loop step 1 | Resolve it in the interrupted-task path. Never force-push and never start a second branch |
+| An open pull request on an interrupted task's branch | Do loop step 7 alone. Never re-run `gh pr create` on it |
+| A worktree on disk with no ledger entry | Reuse it, say the earlier answers were lost |
+| A `--draft` on a resume that disagrees with the ledger | Report it, keep the recorded value |
 | A recorded worktree that is gone on resume | Create a new one off `main`, record it, say so |
 | A task in Notion that the ledger's order lacks | Report it, do not add it to the running stack |
 | No matching card status option | Skip the status write, say so, continue |
@@ -465,11 +521,14 @@ change adds no script, so those suites stay green and untouched.
   description that triggers on `/develop`.
 - It has an `## Arguments` section naming `--skip` and `--draft`.
 - First-run steps appear in order, 1 through 6, and a `## Resume` section exists.
-- Its `manage-pr` invocation names `--base`, and its ledger write names
-  `worktree`. These two are the specific defects a plain "the file exists" check
-  would have missed.
+- Its `manage-pr` invocation names `--base`, `--notion-card`, and `--draft`, and
+  its ledger write names `worktree`. These are the specific defects a plain "the
+  file exists" check would have missed.
 - A push step exists before the pull request is opened.
-- `manage-pr`'s compose reference documents `--base` and `--notion-card`.
+- The interrupted-task path mentions an already-open pull request.
+- `manage-pr`'s compose reference documents `--base`, `--notion-card`, and
+  `--draft`. A `--draft` the caller passes and the callee never accepts is the
+  same defect as the original missing `--base`, one flag over.
 - No `handoff` reference remains in `plugins/`, in `README.md`, or in
   `architect`'s description frontmatter, and `architect` Step 6 contains
   `/develop`.
