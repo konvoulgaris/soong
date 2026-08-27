@@ -18,20 +18,37 @@ stack builds unattended.
 **In scope**
 
 - A new skill at `plugins/soong/skills/develop/SKILL.md`.
+- Two new arguments on `manage-pr` compose mode: `--base` and `--notion-card`.
 - A change to `architect` Step 6: print `/develop <url>` instead of writing a
   handoff document.
 - A ledger file so a stopped stack resumes instead of restarting.
 
 **Out of scope**
 
-- No new agent. The judging and reviewing agents this stack already has are
-  enough.
-- No changes to `merge`, `rebase`, `sync-pr-to-notion`, `manage-pr`,
-  `adversarial-council`, or `architect-cobrain`.
+- No new agent. The reviewing agents this stack already has are enough.
+- No changes to `merge`, `rebase`, `sync-pr-to-notion`, `adversarial-council`, or
+  `architect-cobrain`.
 - No new script. This skill is prose plus delegation, so the existing test
   suites stay untouched.
 - No Notion schema requirement. The stack order is read from what `architect`
   already writes.
+
+## Arguments
+
+```
+/develop <roadmap-item-notion-link> [--skip <task-title>]... [--draft]
+```
+
+- **`<roadmap-item-notion-link>`** — required, first positional. A Notion URL or
+  page id for the roadmap item. This is the ledger key, so the same link resumes
+  the same stack.
+- **`--skip <task-title>`** — repeatable. The task's **title**, matched against
+  the task pages resolved in startup step 2, case-insensitively and ignoring
+  surrounding whitespace. A title that matches no task, or more than one, stops
+  before anything is created. Titles are resolved to page ids at that point, and
+  the ledger stores ids only.
+- **`--draft`** — open every pull request in the stack as a draft. Off by
+  default, and the only thing that turns it on.
 
 ## Decisions
 
@@ -44,6 +61,8 @@ stack builds unattended.
 | 5 | Git shape | One worktree for the stack, branches advance in place | One worktree per task; conditional isolation |
 | 6 | Task exclusion | Refuse a skip that later tasks depend on | Collapse the gap; build dependents anyway |
 | 7 | Notion writeback | Record the card, set status only | Also sync descriptions per task; record the id alone |
+| 8 | Who asks the gap questions | This skill asks them inline | Invoke `superpowers:brainstorming` |
+| 9 | How a stacked base reaches `gh` | Add `--base` to `manage-pr` compose | Run `gh pr create` from this skill |
 
 Decision 3 is the one the whole design turns on. The user's attention is spent
 in a single sitting at the start, not N times through the stack. Decision 4
@@ -55,31 +74,50 @@ Decision 7 was chosen as "also sync descriptions per task" and then reversed by
 the user. Nothing writes to a card body. `architect` wrote that content
 deliberately, and `sync-pr-to-notion` stays a thing the user runs by hand.
 
+Decision 8 replaces an earlier plan to invoke `brainstorming` for the questions.
+That skill's checklist is nine mandatory items ending in a written design
+document, its own review loop, a user approval gate, and a terminal jump to
+`writing-plans`; and invoking it fires a hook that demands a worktree as the
+very first action. All of that had to be suppressed to leave the one behavior
+this skill wants, which is asking recorded questions one at a time. Asking them
+inline is that behavior with nothing to suppress. `adversarial-council` already
+questions the user on the main thread without borrowing a skill.
+
+Decision 9 is what makes the stack a stack. `manage-pr` compose runs
+`gh pr create`, and `gh pr create` with no `--base` targets the repository's
+default branch, so without this every pull request in the stack would point at
+`main` and the stacking would be silently lost.
+
 ## Architecture
 
-`develop` owns three things:
+`develop` owns four things:
 
 1. **The loop.** Tasks in stack order, one at a time.
-2. **The ledger.** What got built, on which branch, as which pull request, and
+2. **The gap questions.** Asked inline, on the main thread, one at a time.
+3. **The ledger.** What got built, on which branch, as which pull request, and
    where to resume.
-3. **Notion status.** One status field per card, on pull request open.
+4. **Notion status.** One status field per card, on pull request open.
 
-Everything else is delegated, unchanged:
+The rest is delegated:
 
 | Step | Skill |
 | --- | --- |
-| Gap questions, on the main thread | `superpowers:brainstorming` |
 | Per-task plan | `superpowers:writing-plans` |
 | Implementation and its two review stages | `superpowers:subagent-driven-development` |
 | Pull request title, body, and record | `soong:manage-pr` |
 
-The gap questions run on the main thread because a subagent cannot reach the
-user. `architect` Step 2 already says this, for the same reason.
+The gap questions are asked by this skill rather than delegated, because a
+subagent cannot reach the user and `brainstorming` cannot be reduced to just its
+question loop. See decision 8.
 
-## Startup
+## First run
 
-Nothing is created and nothing is written until step 5. Every earlier step can
-stop for free.
+A run is a **first run** when the ledger has no entry for this roadmap item, and
+a **resume** when it does. The two paths differ, so they are specified
+separately. Resume is below.
+
+On a first run, nothing is created and nothing is written until step 6. Every
+earlier step can stop for free.
 
 1. **Check configuration.** Run the same script `architect` Step 1 runs:
 
@@ -101,17 +139,42 @@ stop for free.
    - **Page ids** come from querying `taskDb` for tasks linked to the roadmap
      item. A prose list cannot give a page id.
 
-   The two must agree on count, and each list entry must correspond to a task.
-   They disagree, stop. Show both lists side by side and ask. Building a stack in
-   the wrong order is expensive to undo, because every later branch sits on the
-   wrong base.
+   Check two things, in this order:
 
-3. **Apply skips.** For each task named in `--skip`, walk the "stacks on" chain
-   across all tasks. Any unskipped task that depends on a skipped one blocks the
-   skip: refuse, name every blocking dependent, and offer the two fixes, which
-   are to skip those too or to not skip at all.
+   - **Count.** The list has as many entries as the query returned. This is
+     exact, and a mismatch stops.
+   - **Correspondence.** Each list entry maps to exactly one task page. This is
+     a judgment call, not a string equality: `architect` writes list entries
+     naming a scope and a dependency, and task titles naming a single change, so
+     the two describe the same work in different words. Map on the work
+     described. Any entry that maps to no task, or to more than one, stops.
 
-   This runs before any branch exists, so a refused skip costs one message.
+   On a stop, show the two lists side by side, say which entries could not be
+   mapped, and ask. Do not guess an order. Building a stack in the wrong order is
+   expensive to undo, because every later branch sits on the wrong base.
+
+3. **Resolve and validate skips.** For each `--skip` title, match it to a task
+   per the Arguments rules. Then, for each matched task, walk the "stacks on"
+   statement on every unskipped task. Any unskipped task that depends on a
+   skipped one, directly or transitively, blocks the skip: refuse, name every
+   blocking dependent, and offer the two fixes, which are to skip those too or to
+   not skip at all.
+
+   **Known ceiling.** `architect` writes linear stacks, so in practice a skip is
+   accepted only for a contiguous tail of the stack, and refused for anything
+   with work above it. That is the intended behavior and not a defect: the refusal
+   is what stops a task from being built on a base that was never created. Say so
+   plainly in the refusal, so the user is not left guessing why a middle task
+   cannot be skipped alone.
+
+   This step reads the "stacks on" prose that decision 2 declined to trust for
+   **ordering**. Trusting it for **dependency** is deliberate: ordering has a
+   better source in the roadmap list, and dependency has none. A "stacks on"
+   statement that names no task, on any task, stops this step rather than being
+   read as "depends on nothing".
+
+   Skips are validated before any branch exists, so a refused skip costs one
+   message.
 
 4. **The gap pass.** Read every task card, skipped ones excluded. Per task, list
    what implementing it needs and the card does not answer.
@@ -119,53 +182,133 @@ stop for free.
    Show the whole list, including the tasks with no gaps, so the user can add a
    question the pass missed. A missed gap becomes a subagent's guess.
 
-   Any gaps, invoke `brainstorming` for the questions. One question at a time, on
-   the main thread. Answers are recorded in the ledger against their task.
+   Then ask the questions **inline, one at a time**, on the main thread. Do not
+   invoke `brainstorming`; see decision 8. Do not batch the questions into one
+   message, and do not write a design document. The card is the spec, and
+   `architect` already ran the spec review loop over it.
 
-   No second spec document. The card is the spec, and `architect` already ran the
-   spec review loop over it.
+   Hold the answers in the conversation for now. They are written to the ledger in
+   step 6, because this step must stay free to stop.
 
 5. **Create the worktree.** One worktree for the whole stack, off `main`.
 
    Never run in the worktree the user is sitting in: branches advance in place
    here, and swapping a branch under an open editor is the failure this avoids.
 
+6. **Write the ledger entry.** Create the entry for this roadmap item: the
+   resolved order, the resolved skip ids, the answers from step 4, the worktree
+   path from step 5, and every unskipped task at `pending` with a null branch and
+   a null pull request.
+
+   This is the first write of the run, and it is what makes the run resumable.
+
 ## The per-task loop
 
-For each task in stack order, in that one worktree:
+For each unskipped task in stack order, in that one worktree:
 
-1. **Branch.** Off the previous task's branch. Task 1 branches off `main`. Name
-   it `claude/<slug>` from the task title.
+1. **Branch.** Off the previous unskipped task's branch. The first task built is
+   based on `main`. Name it `claude/<slug>` from the task title.
 
-2. **Re-check the answers.** Read the diff the stack has built so far and check
-   this task's recorded gap answers against it. An answer the built code
-   contradicts stops the loop: record `stopped` in the ledger with which answer
-   and what contradicts it, and leave every later task `pending`.
+   The branch may already exist, from a run that died mid-task. Do not create a
+   second one and do not force anything: see "A task that was interrupted" below.
 
-   Nothing contradicted, continue without asking. This is the common case, and it
-   is what keeps the stack unattended.
+   Mark the task `in-progress` in the ledger with its branch name, before any
+   work happens on it.
+
+2. **Re-check the answers.** Read the diff the stack has built so far,
+   `git diff main...HEAD`, and check this task's recorded answers against it.
+
+   An answer is **contradicted** when the built code makes it false or
+   impossible, not when it merely went unused. Two worked examples:
+
+   - *Contradicted.* The answer said the new setting is read from a config file.
+     Task 2 shipped the setting as a required environment variable and deleted the
+     config reader. The answer is now impossible to honor.
+   - *Not contradicted.* The answer said to name the flag `--verbose`. Nothing
+     built so far names any flag. The answer is untouched, so the loop continues
+     without asking.
+
+   A contradiction stops the loop: record `stopped` in the ledger with which
+   answer and what contradicts it, and leave every later task `pending`.
+
+   This check is a no-op on the first task built, where the diff is empty. That
+   is expected, since an answer cannot be contradicted by nothing.
 
 3. **Plan.** Invoke `superpowers:writing-plans` from the card plus its recorded
    answers.
+
+   The plan file it writes is a working artifact, not a deliverable. Write it
+   outside the repository, under the session scratchpad, so it never appears in
+   any pull request's diff. `writing-plans` runs its own per-chunk review loop;
+   let it, and do not skip it.
 
 4. **Implement.** Invoke `superpowers:subagent-driven-development` on that plan.
    Its own two stages, spec compliance then code quality, are the quality gate.
    This skill adds no review of its own and skips neither of those.
 
-5. **Open the pull request.** Invoke `soong:manage-pr` in compose mode with
-   `--non-interactive`, based on the previous task's branch. Never `--draft`
-   unless the user asked for a draft.
+   That skill normally ends by invoking `finishing-a-development-branch`. Do not
+   follow that transition. Step 5 here is the finish for one task, and the stack
+   continues.
 
-   `subagent-driven-development` normally ends by invoking
-   `finishing-a-development-branch`. Do not follow that here. This step is the
-   finish for one task, and the stack continues.
+5. **Push, then open the pull request.** Push the branch first:
+   `git push -u origin <branch>`. `gh pr create` cannot open a pull request for a
+   branch the remote does not have.
 
-6. **Record it.** Write the ledger entry. Write `notionCard` into the pull
-   request record so `sync-pr-to-notion` works later without the `gh` CLI.
+   Then invoke `soong:manage-pr` in compose mode with:
+
+   - `--non-interactive`, because the stack is meant to run unattended.
+   - `--base <previous task's branch>`, or `main` for the first task built. Without
+     this the pull request would target the repository default branch and the
+     stack would not be a stack.
+   - `--notion-card <this task's page url>`, so compose writes the card into the
+     pull request record itself rather than this skill overwriting the record
+     afterward.
+   - `--draft` only if the user passed `--draft`.
+
+6. **Record it.** Mark the task `done` in the ledger with its branch and pull
+   request url.
 
    Then set the card's status. Read the card's own status options through the
    Notion MCP and pick the matching one. Nothing matches, skip the status write
    and say so. Never guess a Notion value: these writes do not reverse.
+
+## Resume
+
+A run is a resume when the ledger already has an entry for this roadmap item.
+Report what is already built, then continue. The differences from a first run:
+
+- **Step 1, configuration:** runs unchanged. Cheap, and the config can have
+  changed.
+- **Step 2, resolve the stack:** the ledger's `order` wins. Re-query Notion only
+  to confirm every task in `order` still exists. A task that vanished stops the
+  resume. A task that Notion has and the ledger does not is **reported, not
+  added**: the stack in progress was planned around the order it started with,
+  and appending to it mid-flight would build the new task on an arbitrary base.
+  Say it was found and skipped, and that re-running from a fresh ledger entry
+  would include it.
+- **Step 3, skips:** the ledger's `skipped` wins. A `--skip` on a resume that
+  does not match the recorded set stops rather than silently re-deciding: say
+  which set is recorded and let the user choose.
+- **Step 4, the gap pass:** does not run. The answers are in the ledger.
+- **Step 5, the worktree:** reuse the recorded path. Verify it exists and is a
+  worktree of this repository. Missing, because the user removed it, create a new
+  one off `main`, record the new path, and say so, since the branches themselves
+  survive in the repository.
+- **Step 6, ledger entry:** already exists. Update, do not overwrite.
+
+Then enter the loop at the first task that is not `done`, and rebuild nothing
+below it.
+
+### A task that was interrupted
+
+A task at `in-progress`, or at `pending` with a branch already in the repository,
+is one whose run died mid-task. Its commits may be partial and its pull request
+may not exist.
+
+Do not delete it, force-push it, or start a second branch. Check the branch
+out, report what it already contains, and ask whether to continue on it or reset
+it. This is the one place where a resume is not automatic, because guessing
+wrong destroys work that is not recoverable from the ledger.
 
 ## The ledger
 
@@ -194,24 +337,38 @@ A stop at task 4 must not mean rebuilding tasks 1 through 3.
         "answers": { "<task-id>": [{ "question": "...", "answer": "..." }] },
         "tasks": {
           "<task-id>": {
-            "status": "pending | done | stopped",
+            "status": "pending | in-progress | done | stopped",
             "branch": "<branch-or-null>",
             "pr": "<url-or-null>",
             "stoppedBecause": "<reason-or-null>"
           }
         },
         "worktree": "<path>",
+        "draft": false,
         "updatedAt": "<iso8601>"
       }
     }
   }
   ```
 
-Re-invoking `/develop` on the same roadmap link reads the ledger, reports what
-is already built, and resumes at the first task that is not `done`. It re-runs
-neither the gap pass nor any finished task.
+Every field is written by a named step and read by a named step:
 
-Two things it deliberately does not do:
+| Field | Written | Read |
+| --- | --- | --- |
+| `order` | First run step 6 | Resume step 2, the loop |
+| `skipped` | First run step 6 | Resume step 3, the loop |
+| `answers` | First run step 6 | Loop step 2 |
+| `tasks[].status` | Loop steps 1, 2, 6 | Resume, to find the first task not `done` |
+| `tasks[].branch` | Loop step 1 | Loop step 1 of the next task, as its base |
+| `tasks[].pr` | Loop step 6 | Reported on resume |
+| `tasks[].stoppedBecause` | Loop step 2 | Reported on resume |
+| `worktree` | First run step 6, and resume step 5 if recreated | Resume step 5 |
+| `draft` | First run step 6 | Loop step 5 |
+
+Merge into the file idempotently, the same way `manage-pr` writes the pull
+request record, so a concurrent run on another repository cannot lose an entry.
+
+Two things the ledger deliberately does not do:
 
 - **No automatic retry of a stopped task.** A stop means something needs the
   user, so retrying without them is a loop.
@@ -219,16 +376,62 @@ Two things it deliberately does not do:
   reason `finishing-a-development-branch` keeps a worktree on the pull request
   path.
 
+## Changes to manage-pr
+
+Compose mode gains two arguments. Both are additive, and both default to today's
+behavior when absent, so every existing caller is unaffected.
+
+- **`--base <branch>`** — pass `--base <branch>` to `gh pr create`. Absent, run
+  `gh pr create` as it does today and let `gh` choose the default branch. This
+  also binds the `<base>` placeholder already used in compose step 1, which is
+  currently unbound.
+- **`--notion-card <url-or-id>`** — use this card in the pull request record
+  instead of resolving one. Absent, resolve as it does today. This does not
+  license guessing: the caller supplies a card it already has, and the existing
+  rule against inventing one is unchanged.
+
+## Changes to architect
+
+Five references to the `handoff` skill go away, across three files.
+
+In `plugins/soong/skills/architect/SKILL.md`:
+
+- **The `description` frontmatter**, which ends "then hand off a prompt to start
+  implementation". This one is grep-clean for the word `handoff` but is the text
+  that drives skill triggering, so it has to change with the rest.
+- **Line 10**, the summary sentence: it ends with a handoff prompt today, and
+  ends by printing the `/develop` command instead.
+- **Line 17**, the Assumes list: drop `handoff`.
+- **Step 6**, lines 160 through 167: replace the handoff document with a single
+  printed line, `/develop <roadmap-item-url>`.
+- **The Rules**, which say implementation is "the next session's job". `/develop`
+  may now run in the same session, so this becomes a statement that `architect`
+  itself never implements, which is the part that matters.
+
+In `README.md`, the Requirements section lists `handoff` as a dependency
+justified solely by `/architect` using it. That justification is gone, so the
+entry goes.
+
+Step 6 keeps its shape. It is still the last step, and it still hands the user
+one copy-pasteable thing. What changes is that the thing is a command rather
+than a prompt plus a document, and that it starts the **whole stack** rather
+than the first pull request only.
+
 ## Failure modes
 
 | Failure | Behavior |
 | --- | --- |
 | Repo unconfigured, exit 3 | Invoke `architect-setup`, re-check, stop on non-zero |
-| Notion MCP unreachable | Stop at startup. No worktree, no branch |
-| Roadmap list and task query disagree | Stop, show both, ask. No branch created |
-| A skip later tasks depend on | Refuse, name the dependents. No branch created |
+| Notion MCP unreachable | Stop at startup. No worktree, no branch, no ledger |
+| Roadmap list and task query disagree on count or mapping | Stop, show both, ask. Nothing created |
+| A `--skip` title matching no task or several | Stop. Nothing created |
+| A skip later tasks depend on | Refuse, name the dependents, explain the tail-only ceiling. Nothing created |
+| A "stacks on" statement naming no task | Stop at skip validation. Never read as "depends on nothing" |
 | A gap answer the built code contradicts | Stop at that task, ledger records why. Later tasks stay `pending` |
 | `subagent-driven-development` reports BLOCKED | Stop at that task. Never re-dispatch it unchanged, and never hand-fix it on the main thread |
+| A branch that already exists at loop step 1 | Stop and ask. Never force-push and never start a second branch |
+| A recorded worktree that is gone on resume | Create a new one off `main`, record it, say so |
+| A task in Notion that the ledger's order lacks | Report it, do not add it to the running stack |
 | No matching card status option | Skip the status write, say so, continue |
 | The pull request guard hook denies `gh` | Fix the title or body per its reason and retry. Never bypass it |
 
@@ -236,29 +439,19 @@ Two things it deliberately does not do:
 
 - Never run in the worktree the user is sitting in.
 - One task, one branch, one pull request. Never batch two tasks into one.
-- A task's base is the previous task's branch. Only task 1 is based on `main`.
+- A task's base is the previous unskipped task's branch. Only the first task
+  built is based on `main`.
 - Never force-push. Each task's branch is only appended to.
-- Never open a draft unless the user asked.
+- Never open a draft unless the user passed `--draft`.
 - Never skip either review stage, and never substitute a main-thread read for
   one.
+- Ask the gap questions inline, one at a time. Never batch them, and never write
+  a design document for a task.
+- Keep plan files out of the repository, so no pull request carries another
+  task's plan.
 - Notion writes do not reverse. Status is the only card write, and the body is
   never touched.
 - Never guess a Notion status value, a card id, or a database id.
-
-## Changes to architect
-
-Four references to the `handoff` skill go away.
-
-- **Line 10**, the summary sentence: it ends with a handoff prompt today, and
-  ends by printing the `/develop` command instead.
-- **Line 17**, the Assumes list: drop `handoff`.
-- **Step 6**, lines 160 through 167: replace the handoff document with a single
-  printed line, `/develop <roadmap-item-url>`.
-
-Step 6 keeps its shape. It is still the last step, and it still hands the user
-one copy-pasteable thing. What changes is that the thing is a command rather
-than a prompt plus a document, and that it starts the **whole stack** rather
-than the first pull request only.
 
 ## Verification
 
@@ -270,9 +463,16 @@ change adds no script, so those suites stay green and untouched.
 
 - `plugins/soong/skills/develop/SKILL.md` exists, with `name: develop` and a
   description that triggers on `/develop`.
-- Startup steps appear in order, 1 through 5.
-- `architect` has no remaining reference to the `handoff` skill, and Step 6
-  contains `/develop`.
+- It has an `## Arguments` section naming `--skip` and `--draft`.
+- First-run steps appear in order, 1 through 6, and a `## Resume` section exists.
+- Its `manage-pr` invocation names `--base`, and its ledger write names
+  `worktree`. These two are the specific defects a plain "the file exists" check
+  would have missed.
+- A push step exists before the pull request is opened.
+- `manage-pr`'s compose reference documents `--base` and `--notion-card`.
+- No `handoff` reference remains in `plugins/`, in `README.md`, or in
+  `architect`'s description frontmatter, and `architect` Step 6 contains
+  `/develop`.
 - `plugin.json` version bumped to `0.9.0`, a minor bump for a feature.
 
 **Behavioral.** These need a live run against a real roadmap item to exercise.
@@ -280,13 +480,17 @@ They are unexercised until then, and a passing structural check must not be read
 as covering them:
 
 1. A clean stack, no gaps, N tasks, produces N stacked pull requests with each
-   based on the previous task's branch.
-2. Gaps present asks every question up front, one at a time, then runs
+   based on the previous task's branch, verified by reading each pull request's
+   base rather than assuming it.
+2. Gaps present asks every question up front, one at a time, inline, then runs
    unattended.
-3. A roadmap list that disagrees with the task query stops before any branch
-   exists.
+3. A roadmap list that disagrees with the task query stops before any branch or
+   ledger entry exists.
 4. A skip that later tasks depend on is refused, and the refusal names them.
 5. A gap answer contradicted at task 4 stops there, records why, and leaves
    tasks 5 and up untouched.
-6. Re-invoking after that stop resumes at task 4 and rebuilds nothing.
+6. Re-invoking after that stop resumes at task 4, reuses the recorded worktree,
+   does not re-ask the gap questions, and rebuilds nothing.
 7. A card whose status options do not match skips the status write and says so.
+8. A run interrupted mid-task resumes by asking about the existing branch rather
+   than recreating or force-pushing it.
