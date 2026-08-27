@@ -752,10 +752,13 @@ Then confirm no stale reference is left:
 
 ```bash
 sed -n '/^## Step 4:/,/^## Step 5:/p' plugins/soong/skills/architect/SKILL.md \
-  | grep -n 'the agent' && echo "STALE REFERENCE ABOVE" || echo "ok: no stale agent reference"
+  | grep -in 'the agent' && echo "STALE REFERENCE ABOVE" || echo "ok: no stale agent reference"
 ```
 
 Expected: `ok: no stale agent reference`.
+
+The `-i` is load-bearing. The reference this catches starts a sentence, so it is
+capitalized, and without `-i` the check passes on a file that still contains it.
 
 One more edit in the same step. The paragraph about re-dispatching cobrain does
 not yet know the council exists. Find it:
@@ -858,8 +861,12 @@ wrongly.
 Each needs a real `architect` run on a spec built to produce the finding shape
 under test. That means they cannot all be run at the moment you finish writing
 the files: some depend on how the judges actually behave. Run what you can now,
-and run the rest on the first real architect invocation. Record which ones you
-have not yet exercised rather than marking this step done on a partial pass.
+and run the rest on the first real architect invocation.
+
+Do not mark this step done on a partial pass. List the scenarios you did not
+exercise in the pull request description, under a heading that says they are
+unexercised. A scenario recorded nowhere is a scenario nobody runs, and these
+are the only checks here that test behavior rather than wording.
 
 1. **Mixed finding kinds.** A spec producing one finding already handled in the
    code, one with an obviously correct fix, and one with a real tradeoff.
