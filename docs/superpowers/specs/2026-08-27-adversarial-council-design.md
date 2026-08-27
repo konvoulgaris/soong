@@ -341,6 +341,10 @@ The notice is not a question and does not wait for an answer. It exists so that
 a swallowed blocker is visible. Without it, the council's most consequential
 decision would be its most silent one.
 
+The exception applies to a shared `drop` in either round. A drop the judges
+reached only after arguing is still a drop, and a blocker the user never hears
+about is the thing the notice exists to prevent.
+
 ### Output
 
 * The queue of findings for the user, each with its question, and with both
@@ -473,8 +477,9 @@ ships. Verification is manual, through real architect runs on this repository.
    the user as a question.
 2. A spec that produces nine or more findings. Confirm the council does not run,
    the user is told the spec needs rework, and the findings arrive one at a time.
-3. A finding cobrain marked `blocking` that both judges drop. Confirm the
-   one-line notice appears and does not ask for an answer.
+3. A finding cobrain marked `blocking` that both judges drop, once where they
+   agree in the first round and once where they agree only after the rebuttal.
+   Confirm the one-line notice appears in both, and does not ask for an answer.
 4. A finding the two lenses read differently. Confirm exactly one rebuttal round
    runs, and that a finding still split afterwards reaches the user with both
    positions shown.
@@ -501,7 +506,7 @@ None.
 | Above the cap | Council does not run, user walks all findings | Council runs on the top eight; cobrain caps its own output |
 | Who orchestrates | Main thread, through a skill | A council agent that dispatches the judges |
 | Unresolved disagreement | Goes to the user, with both positions | A third judge decides |
-| Both judges abstain | Straight to the user, no rebuttal | Treated as agreement; a rebuttal round between two judges who lack evidence |
+| Both judges abstain | Straight to the user, skipping any rebuttal | Treated as agreement; a rebuttal round between two judges who lack evidence |
 | Dropping a `blocking` finding | Allowed, with a one-line notice | Forbidden; allowed silently |
 
 A third judge to break ties was rejected because a genuine split on "does this
