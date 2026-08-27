@@ -116,7 +116,7 @@ earlier step can stop for free.
    plainly in the refusal, so the user is not left guessing why a middle task
    cannot be skipped alone.
 
-   This step reads the "stacks on" prose that decision 2 declined to trust for
+   This step reads the "stacks on" prose that is not trusted for
    **ordering**. Trusting it for **dependency** is deliberate: ordering has a
    better source in the roadmap list, and dependency has none. A "stacks on"
    statement that names no task, on any task, stops this step rather than being
@@ -132,9 +132,10 @@ earlier step can stop for free.
    question the pass missed. A missed gap becomes a subagent's guess.
 
    Then ask the questions **inline, one at a time**, on the main thread. Do not
-   invoke `brainstorming`; see decision 8. Do not batch the questions into one
-   message, and do not write a design document. The card is the spec, and
-   `architect` already ran the spec review loop over it.
+   invoke `brainstorming`, whose checklist ends in a written design document, its
+   own review loop, and an approval gate, none of which belongs here. Do not
+   batch the questions into one message, and do not write a design document. The
+   card is the spec, and `architect` already ran the spec review loop over it.
 
    Hold the answers in the conversation for now. They are written to the ledger in
    step 6, because this step must stay free to stop.
