@@ -411,6 +411,7 @@ Every field is written by a named step and read by a named step:
 | `tasks[].stoppedBecause` | Loop step 3 | Reported on resume, by the interrupted-work path |
 | `worktree` | First run step 6, and resume step 5 if recreated | Resume step 5, and every loop step, which all run inside it |
 | `draft` | First run step 6 | Loop step 7 |
+| `updatedAt` | Every ledger write | Reported on resume, to say when the stack last advanced |
 
 Merge into the file idempotently, the same way `manage-pr` writes the pull
 request record, so a concurrent run on another repository cannot lose an entry.

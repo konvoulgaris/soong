@@ -260,11 +260,11 @@ otherwise only ask an implementer to trust:
 ```bash
 f=plugins/soong/skills/develop/SKILL.md
 # The asserted numbers count the header and separator rows too, so they are the
-# data-row count plus two: 21 failure modes -> 23, 9 ledger fields -> 11.
+# data-row count plus two: 21 failure modes -> 23, 10 ledger fields -> 12.
 sed -n '/^## Failure modes/,/^## Rules/p' "$f" | grep -c '^| ' | grep -qx 23 \
   && echo "ok: 21 failure-mode rows" || echo "WRONG: failure-mode row count"
-sed -n '/^| Field |/,/^$/p' "$f" | grep -c '^| ' | grep -qx 11 \
-  && echo "ok: 9 ledger field rows" || echo "WRONG: ledger field row count"
+sed -n '/^| Field |/,/^$/p' "$f" | grep -c '^| ' | grep -qx 12 \
+  && echo "ok: 10 ledger field rows" || echo "WRONG: ledger field row count"
 ```
 
 The specific clauses whose absence a plain "file exists" check would miss, each
@@ -715,8 +715,10 @@ these. Report each as pass or fail with a quote:
 4. Loop step 7 names all four compose arguments.
 5. The interrupted-work path distinguishes three states and uses `--state all`.
 6. `stopped` is a loop step 1 trigger and is settled in the interrupted section.
-7. The ledger's field table has nine rows, and every field in the JSON shape
-   appears in it.
+7. Every field in the ledger's JSON shape appears in the field table, and every
+   table row names a step that exists. Do not assert a row count here: the count
+   is checked mechanically in Task 1 Step 8, and asserting it twice invites the
+   two numbers to drift apart.
 8. The Rules forbid force-pushing, batching two tasks into one PR, and writing to
    a card body.
 
