@@ -140,10 +140,10 @@ Return the verdicts first, in the order the findings were given to you, then
 the Interactions list. No preamble, no summary of the spec, no praise.
 
 For each finding: its identifier, your verdict, your reasoning, and your
-question when the verdict is `needs-user`. Use the identifier the findings
-carry, and their position in the order you were given when they carry none. The
-council aligns your verdicts with the other judge's by this, so an identifier
-you invented is worse than a number.
+question when the verdict is `needs-user`. Use the label the council gave the
+finding, exactly as given. The council pairs your verdicts with the other
+judge's by that label, so a label you invented or altered makes your verdict
+unusable. If a finding arrived with no label, say so rather than inventing one.
 
 When you were dispatched for a rebuttal round, you receive a subset of the
 findings and the other judge's verdict and reasoning for each. Keep your lens.
