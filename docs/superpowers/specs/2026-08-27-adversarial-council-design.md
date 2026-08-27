@@ -40,8 +40,10 @@ adversarial rather than a single model's opinion.
 
 * The council does not review the spec. It reviews findings about the spec. The
   judges never add a finding that `architect-cobrain` did not report.
-* The council does not edit the spec. It classifies. The main thread applies the
-  changes.
+* The council does not rewrite the spec on its own judgment. It classifies. It
+  applies only a fix both judges agreed was obviously correct, and never one
+  that changes the pull request stack. The council runs on the main thread, so
+  "the council applies it" and "the main thread applies it" name the same actor.
 * The council does not replace `architect-cobrain`. Cobrain still produces the
   findings.
 * The council does not replace the user gate. It makes that gate shorter.
@@ -375,9 +377,10 @@ about is the thing the notice exists to prevent.
 ### Output
 
 * The queue of findings for the user, each with its question, and with both
-  positions where the judges stayed split. The queue is walked in cobrain's
-  priority order, except that an Interactions ordering constraint wins over
-  priority.
+  positions where the judges stayed split. The queue is walked in the order
+  cobrain returned the findings, except that an Interactions ordering constraint
+  wins. A finding the user's answer has already made moot is skipped rather than
+  asked, and counts as resolved.
 * The list of fixes applied under `auto-resolve`.
 * One-line notices for dropped `blocking` findings.
 * A count of findings dropped silently.

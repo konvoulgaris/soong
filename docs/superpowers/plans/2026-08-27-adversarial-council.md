@@ -467,7 +467,7 @@ Send both judges in one message so they run at the same time. Use the Agent
 tool with `subagent_type: adversarial-judge` for each.
 
 Label the findings first. Cobrain emits no identifiers, so give each finding a
-label, `F1` upward, in cobrain's priority order. Use those same labels for both
+label, `F1` upward, in the order cobrain returned them. Use those same labels for both
 judges, for both rebuttal dispatches, and in everything you report. The labels
 are how you pair the two judges' verdicts, and a verdict you cannot pair is a
 verdict you cannot resolve.
@@ -642,10 +642,16 @@ after arguing is still a drop.
 
 ## Asking the user
 
-Walk the queue in cobrain's priority order, except where an Interactions entry
-says one finding must be asked before another. That ordering wins over
-priority, because asking a moot question wastes the attention this skill exists
-to save.
+These rules govern the walk. You walk the queue yourself when you were invoked
+directly. Under the `architect` skill, its Step 4 owns the walk and these rules
+bind Step 4, so do not walk the queue here and leave Step 4 to walk it again.
+
+Walk in the order cobrain returned the findings, except where an Interactions
+entry says one finding must be asked before another. That ordering wins, because
+asking a moot question wastes the attention this skill exists to save.
+
+A finding the user's answer has made moot is not asked at all. Say it was
+skipped and why. A skipped finding is resolved, not outstanding.
 
 One finding per message. Never a batch, and never a numbered list of questions
 in one message.
@@ -773,12 +779,18 @@ Walk a queue **one at a time**. Which queue depends on Step 3.5:
 * **The council returned a queue.** Walk it in the order the council gives.
 * **The council handed the findings back unfiltered**, because they were over
   the cap or because both judges failed. Walk the full cobrain finding set, in
-  cobrain's priority order.
+  the order cobrain returned them.
 
 Before walking either queue, relay every notice the council gave for a
 `blocking` finding it dropped, and its count of findings dropped silently. The
 notices are not questions and do not wait for an answer, but a swallowed blocker
 the user never hears about is the one thing the notice exists to prevent.
+
+The council may mark a finding as conditional on another finding's answer. When
+the earlier answer makes it moot, do not ask it. Say it was skipped and why. A
+skipped finding counts as resolved for the rule below, because asking a question
+the user has already answered by implication is the waste this filtering exists
+to remove.
 
 An empty council queue means the council resolved everything. Say so, relay the
 notices and the count, list the fixes the council applied, and go to Step 5.
