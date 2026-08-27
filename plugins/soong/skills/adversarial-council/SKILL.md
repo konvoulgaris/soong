@@ -37,8 +37,10 @@ fill the gap. This skill judges findings; it does not generate them.
 
 **More than eight findings.** Do not run the council. Tell the user that the
 review returned more findings than the council filters, and that the spec needs
-rework rather than filtering. The findings then go to the user one at a time,
-which is the behavior that existed before this skill.
+rework rather than filtering. Hand every finding back unfiltered, and say they
+are unfiltered. Whoever invoked you walks them one at a time: the `architect`
+skill does that in its Step 4, and when you were invoked directly you walk them
+yourself, under the rules in "Asking the user" below.
 
 The cap is a signal and not a resource limit. Nine or more findings means the
 spec is unsound. Filtering an unsound spec down to "only what needs your input"
@@ -53,8 +55,17 @@ get under it.
 Send both judges in one message so they run at the same time. Use the Agent
 tool with `subagent_type: adversarial-judge` for each.
 
-Each judge gets: the whole finding set, the spec path, its own lens named
-explicitly, and that lens's evidence.
+Label the findings first. Cobrain emits no identifiers, so give each finding a
+label, `F1` upward, in cobrain's priority order. Use those same labels for both
+judges, for both rebuttal dispatches, and in everything you report. The labels
+are how you pair the two judges' verdicts, and a verdict you cannot pair is a
+verdict you cannot resolve.
+
+Do not renumber for the rebuttal round. A contested subset keeps its original
+labels, so `F4` is the same finding in both rounds.
+
+Each judge gets: the whole labelled finding set, the spec path, its own lens
+named explicitly, and that lens's evidence.
 
 * **Verifier lens** - also gets the files each finding touches.
 * **Architect lens** - also gets the pull request stack, in order, with each
@@ -85,8 +96,11 @@ stated reason. Nothing the council cannot judge is ever dropped.
 An `abstain` from either judge is otherwise a split. Uncertainty never counts as
 agreement.
 
-A finding a judge returned no verdict for counts as `abstain`. A verdict for a
-finding you did not send counts as nothing, and is discarded.
+Pair the verdicts by label. A finding a judge returned no verdict for counts as
+`abstain`. A verdict for a label you did not send counts as nothing, and is
+discarded. Never pair by position: a judge that reorders its report would
+silently hand you the right verdict for the wrong finding, and no other rule
+here can see that.
 
 ## Using the Interactions lists
 
@@ -137,9 +151,16 @@ user, because there is no further round to send it to:
 ## Acting on agreement
 
 * `drop` - dropped, and the user is not told. One exception below.
-* `auto-resolve` - apply the fix to the spec, and list every fix you applied
-  when you report.
+* `auto-resolve` - apply the fix to the spec yourself, before you walk the
+  queue, and list every fix you applied when you report. Applying them first
+  keeps you from asking the user about a spec you are about to change under
+  them.
 * `needs-user` - queued for the user.
+
+One `auto-resolve` you do not apply: a fix that would add, remove, re-order, or
+re-split a pull request. That change makes cobrain's findings stale, so it needs
+a fresh review rather than a quiet edit. Queue it for the user instead, and say
+that it changes the stack.
 
 ### The blocking exception
 
@@ -163,6 +184,11 @@ after arguing is still a drop.
 
 ## Asking the user
 
+Walk the queue in cobrain's priority order, except where an Interactions entry
+says one finding must be asked before another. That ordering wins over
+priority, because asking a moot question wastes the attention this skill exists
+to save.
+
 One finding per message. Never a batch, and never a numbered list of questions
 in one message.
 
@@ -182,8 +208,9 @@ outrank your judgment on what to do about it.
   contested, so every finding goes to the user. There is no second rebuttal, and
   you do not fall back to the surviving judge's verdicts. One judge's opinion is
   not a council.
-* **Both judges fail.** Report the failure. Every finding goes to the user one
-  at a time, which is the behavior that existed before this skill.
+* **Both judges fail.** Report the failure and hand every finding back
+  unfiltered, exactly as the over-the-cap gate does. They still reach the user
+  one at a time.
 
 A council failure must never make a finding disappear. Every path above ends
 with the findings in front of the user rather than resolved without one.
