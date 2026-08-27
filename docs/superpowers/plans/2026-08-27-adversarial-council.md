@@ -670,7 +670,9 @@ for s in "## Resolution" "## Using the Interactions lists" "## The rebuttal roun
 done
 grep -qF 'One round means one round' "$f" && echo "ok: one-round rule" || echo "MISSING: one-round rule"
 grep -qF 'never acted on' "$f" && echo "ok: shared abstain rule" || echo "MISSING: shared abstain rule"
-grep -qF "One judge's opinion is not a council" "$f" && echo "ok: no-fallback rule" || echo "MISSING: no-fallback rule"
+tr '\n' ' ' < "$f" | tr -s ' ' \
+  | grep -qF "One judge's opinion is not a council" \
+  && echo "ok: no-fallback rule" || echo "MISSING: no-fallback rule"
 ```
 
 Expected: `rule order ok` with rule 1's line number lower than rule 3's, then
