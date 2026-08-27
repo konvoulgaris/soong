@@ -51,6 +51,23 @@ stack builds unattended.
 - **`--draft`** — open every pull request in the stack as a draft. Off by
   default, and the only thing that turns it on.
 
+## Names
+
+Two names are derived, not chosen, so that a later run can find what an earlier
+run created. Both are computed before anything is created, and neither depends on
+the ledger.
+
+- **A task's branch** is `claude/<slug>`, where `<slug>` is the task title
+  lowercased, with every run of non-alphanumeric characters replaced by a single
+  hyphen and leading and trailing hyphens removed.
+- **The stack's worktree** is `.claude/worktrees/develop-<roadmap-item-id>`,
+  under the repository's main checkout. The roadmap item id is the argument the
+  user passed, so this is computable on the very first step of any run.
+
+Deriving both from data that exists before the run starts is what makes the
+interrupted-work check and the worktree reuse check possible. A name invented at
+creation time could not be recomputed by the run that has to find it.
+
 ## Decisions
 
 | # | Question | Chosen | Rejected |
@@ -193,8 +210,9 @@ earlier step can stop for free.
 
 5. **Create the worktree.** One worktree for the whole stack, off `main`.
 
-   Check `git worktree list` for one already named for this roadmap item before
-   creating one. A previous run can have died between this step and step 6,
+   The worktree's path is derived, per **Names** above, so it is the same for
+   every run of this roadmap item. Check `git worktree list` for that exact path
+   before creating one. A previous run can have died between this step and step 6,
    leaving a worktree on disk with no ledger entry to point at it. Reuse it and
    say so. Without this check that run's worktree is orphaned and a second one is
    created beside it.
@@ -217,17 +235,25 @@ earlier step can stop for free.
 
 For each unskipped task in stack order, in that one worktree:
 
-1. **Check for interrupted work, before branching.** If this task is
-   `in-progress`, or is `pending` with its branch already in the repository, a
-   previous run died inside it. Do not create a second branch, do not force
-   anything, and do not fall through to the next step: go to "A task that was
-   interrupted" and resolve it there first.
+1. **Check for interrupted work, before branching.** Derive this task's branch
+   name per **Names** above. Do not read it from the ledger: on a task still at
+   `pending` the ledger's branch is null, and that is one of the cases this check
+   exists to catch.
 
-   This check owns the collision. Step 3's re-check and everything after it
-   assume a branch this run created.
+   Go to "A task that was interrupted" and resolve it there first if any of these
+   holds:
 
-2. **Branch.** Off the previous unskipped task's branch. The first task built is
-   based on `main`. Name it `claude/<slug>` from the task title.
+   - The task is `in-progress`.
+   - The task is `stopped`. The ledger promises no automatic retry, so a stopped
+     task is never resumed by falling through to the next step.
+   - The task is `pending` and its derived branch already exists in the
+     repository.
+
+   None of those, continue. This check owns the collision, and step 3's re-check
+   and everything after it assume a branch this run created.
+
+2. **Branch.** Create the derived branch off the previous unskipped task's
+   branch. The first task built is based on `main`.
 
    Mark the task `in-progress` in the ledger with its branch name, before any
    work happens on it.
@@ -264,8 +290,8 @@ For each unskipped task in stack order, in that one worktree:
    This skill adds no review of its own and skips neither of those.
 
    That skill normally ends by invoking `finishing-a-development-branch`. Do not
-   follow that transition. Step 6 here is the finish for one task, and the stack
-   continues.
+   follow that transition. Steps 6 through 8 here are the finish for one task, and
+   the stack continues.
 
    It also dispatches a final reviewer over the whole implementation before that
    transition. Let that run: per task it reviews the stack as built so far, which
@@ -273,11 +299,13 @@ For each unskipped task in stack order, in that one worktree:
    inherits rather than adds, and it is not one of the two per-task stages, so
    the rule against skipping those does not cover it.
 
-6. **Push, then open the pull request.** Push the branch first:
-   `git push -u origin <branch>`. `gh pr create` cannot open a pull request for a
-   branch the remote does not have.
+6. **Push the branch.** `git push -u origin <branch>`. `gh pr create` cannot open
+   a pull request for a branch the remote does not have.
 
-   Then invoke `soong:manage-pr` in compose mode with:
+   This is its own step because a run can die between it and the next one, and
+   the interrupted-work path has to tell those two states apart.
+
+7. **Open the pull request.** Invoke `soong:manage-pr` in compose mode with:
 
    - `--non-interactive`, because the stack is meant to run unattended.
    - `--base <previous task's branch>`, or `main` for the first task built. Without
@@ -288,7 +316,7 @@ For each unskipped task in stack order, in that one worktree:
      afterward.
    - `--draft` only if the user passed `--draft`.
 
-7. **Record it.** Mark the task `done` in the ledger with its branch and pull
+8. **Record it.** Mark the task `done` in the ledger with its branch and pull
    request url.
 
    Then set the card's status. Read the card's own status options through the
@@ -329,29 +357,41 @@ below it.
 
 ### A task that was interrupted
 
-A task at `in-progress`, or at `pending` with a branch already in the repository,
-is one whose run died mid-task. Its commits may be partial, and a pull request
-for it may already be open even though the ledger says `pr: null`.
+A task the previous run died inside. The ledger cannot say how far it got, since
+the run died before writing that down, so establish the state from git and `gh`
+rather than from the ledger.
 
-**Check for an open pull request first**, before offering the user anything:
+Ask two questions, in this order:
 
 ```bash
-gh pr list --head <branch> --state open --json number,url
+gh pr list --head <branch> --state open --json number,url   # is there a pull request?
+git rev-parse --abbrev-ref '@{u}' 2>/dev/null               # is it pushed?
+git log --oneline '@{u}'..HEAD                              # anything unpushed?
 ```
 
-- **A pull request exists.** The run died between opening it and recording it.
-  Everything the loop does up to that point is already done, so do not re-run it:
-  `gh pr create` fails on a branch that already has an open pull request. Finish
-  the task instead, by doing loop step 7 alone, which records the found url and
-  sets the card status. Then continue to the next task.
-- **No pull request exists.** Check the branch out, report what it already
-  contains, and ask whether to continue on it or reset it.
+That gives three states, each resumed at a different step:
 
-Do not delete the branch, force-push it, or start a second one. The no-pull-request
-case is the one place where a resume is not automatic, because guessing wrong
-destroys work that is not recoverable from the ledger. The other case is
-recoverable precisely because the pull request is on the remote, where `gh` can
-still see it.
+- **A pull request is open.** The run died between opening it and recording it.
+  Do not re-run the earlier steps and do not call `gh pr create` again, which
+  fails on a branch that already has an open pull request. Do loop step 8 alone:
+  record the found url and set the card status. Then continue to the next task.
+- **Pushed, no pull request.** The run died between the push and the pull
+  request. The work is complete and safe on the remote, so re-planning and
+  re-implementing it would duplicate it. Resume at loop step 7 and open the pull
+  request. Push again first if `git log '@{u}'..HEAD` shows commits the remote
+  does not have.
+- **Not pushed.** The only genuinely ambiguous state: the commits are local and
+  partial, and nothing outside this machine knows about them. Check the branch
+  out, report what it contains, and ask whether to continue on it or reset it.
+
+Never delete the branch, force-push it, or start a second one. Only the last case
+asks the user, because only there can guessing destroy work that is not
+recoverable. The first two are recoverable precisely because the remote can still
+see them.
+
+A `stopped` task reaches this section too, and it is not an interruption: the
+ledger records why it stopped, and the user has to resolve that before it can be
+built. Report `stoppedBecause` and stop. Do not resume it at any step.
 
 ## The ledger
 
@@ -401,12 +441,12 @@ Every field is written by a named step and read by a named step:
 | `order` | First run step 6 | Resume step 2, the loop |
 | `skipped` | First run step 6 | Resume step 3, the loop |
 | `answers` | First run step 6 | Loop steps 3 and 4 |
-| `tasks[].status` | Loop steps 2, 3, 7 | Resume, to find the first task not `done`; loop step 1 and the interrupted-task path |
-| `tasks[].branch` | Loop step 2 | Loop step 6, to push and to set `--base`; loop step 1 and the interrupted-task path, to detect a branch that already exists |
-| `tasks[].pr` | Loop step 7 | Reported on resume |
-| `tasks[].stoppedBecause` | Loop step 3 | Reported on resume |
+| `tasks[].status` | Loop steps 2, 3, 8 | Resume, to find the first task not `done`; loop step 1 and the interrupted-task path |
+| `tasks[].branch` | Loop step 2 | Loop steps 6 and 7, to push and to set `--base`; loop step 1 and the interrupted-task path derive it instead, since it can be null there |
+| `tasks[].pr` | Loop step 8 | Reported on resume |
+| `tasks[].stoppedBecause` | Loop step 3 | Reported on resume, by the interrupted-work path |
 | `worktree` | First run step 6, and resume step 5 if recreated | Resume step 5, and every loop step, which all run inside it |
-| `draft` | First run step 6 | Loop step 6 |
+| `draft` | First run step 6 | Loop step 7 |
 
 Merge into the file idempotently, the same way `manage-pr` writes the pull
 request record, so a concurrent run on another repository cannot lose an entry.
@@ -421,7 +461,7 @@ Two things the ledger deliberately does not do:
 
 ## Changes to manage-pr
 
-Compose mode gains two arguments. Both are additive, and both default to today's
+Compose mode gains three arguments. All are additive, and all default to today's
 behavior when absent, so every existing caller is unaffected.
 
 - **`--base <branch>`** — pass `--base <branch>` to `gh pr create`. Absent, run
@@ -483,7 +523,10 @@ than the first pull request only.
 | A gap answer the built code contradicts | Stop at that task, ledger records why. Later tasks stay `pending` |
 | `subagent-driven-development` reports BLOCKED | Stop at that task. Never re-dispatch it unchanged, and never hand-fix it on the main thread |
 | A branch that already exists at loop step 1 | Resolve it in the interrupted-task path. Never force-push and never start a second branch |
-| An open pull request on an interrupted task's branch | Do loop step 7 alone. Never re-run `gh pr create` on it |
+| An open pull request on an interrupted task's branch | Do loop step 8 alone. Never re-run `gh pr create` on it |
+| An interrupted task pushed with no pull request | Resume at loop step 7. Never re-implement it |
+| An interrupted task with unpushed commits | Ask the user. The only state where guessing loses work |
+| A `stopped` task reached on resume | Report `stoppedBecause` and stop. Never retry it automatically |
 | A worktree on disk with no ledger entry | Reuse it, say the earlier answers were lost |
 | A `--draft` on a resume that disagrees with the ledger | Report it, keep the recorded value |
 | A recorded worktree that is gone on resume | Create a new one off `main`, record it, say so |
@@ -519,13 +562,19 @@ change adds no script, so those suites stay green and untouched.
 
 - `plugins/soong/skills/develop/SKILL.md` exists, with `name: develop` and a
   description that triggers on `/develop`.
-- It has an `## Arguments` section naming `--skip` and `--draft`.
-- First-run steps appear in order, 1 through 6, and a `## Resume` section exists.
+- It has an `## Arguments` section naming the positional roadmap link, `--skip`,
+  and `--draft`.
+- First-run steps appear in order, 1 through 6, the loop's steps appear in order,
+  1 through 8, with the interrupted-work check first, and a `## Resume` section
+  exists.
+- A `## Names` section defines both the branch and the worktree name, and it
+  appears before the steps that use them.
 - Its `manage-pr` invocation names `--base`, `--notion-card`, and `--draft`, and
   its ledger write names `worktree`. These are the specific defects a plain "the
   file exists" check would have missed.
 - A push step exists before the pull request is opened.
-- The interrupted-task path mentions an already-open pull request.
+- The interrupted-task path distinguishes three states: a pull request open,
+  pushed without one, and not pushed.
 - `manage-pr`'s compose reference documents `--base`, `--notion-card`, and
   `--draft`. A `--draft` the caller passes and the callee never accepts is the
   same defect as the original missing `--base`, one flag over.
