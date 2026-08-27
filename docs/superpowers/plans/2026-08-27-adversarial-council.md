@@ -4,7 +4,7 @@
 
 **Goal:** Add an `adversarial-judge` agent and an `adversarial-council` skill to the `soong` plugin, and wire them into the `architect` skill, so that only the review findings needing a decision from the user reach the user.
 
-**Architecture:** One agent file defines a single judge that the council dispatches twice with different evidence lenses. One `SKILL.md` holds the council's orchestration, which the main thread runs. The `architect` skill gains a step that calls the council and a changed step that walks the council's queue. All three artifacts are prose, so none gets unit tests; each gets a structural check, and the whole gets a verification checklist.
+**Architecture:** One agent file defines a single judge that the council dispatches twice with different evidence lenses. One `SKILL.md` holds the council's orchestration, which the main thread runs. The `architect` skill gains a step that calls the council and a changed step that walks the council's queue. All three artifacts are prose, so none gets unit tests; each gets a structural check, and the whole gets a static checklist plus the spec's seven behavioral scenarios.
 
 **Tech Stack:** Markdown with YAML frontmatter. No scripts, no dependencies, no build step.
 
@@ -71,8 +71,12 @@ What each task does instead:
   required sections are present, and the forbidden strings are absent. These
   catch the real failure mode for a prose artifact, which is a section quietly
   left out. Run them before you commit.
-* **A verification checklist** in the final task, which covers what `grep`
-  cannot: whether the instructions are coherent when read end to end.
+* **A static checklist** in the final task, which covers what `grep` cannot:
+  whether the instructions are coherent when read end to end.
+* **The spec's seven behavioral scenarios**, also in the final task. The
+  checklist confirms a rule is written down; only a real run confirms it
+  behaves. These are the only check here that catches a rule that reads
+  correctly and acts wrongly.
 
 The structural checks are written as one-line commands you run in the
 terminal. They are not committed as files. A `.test.sh` asserting that a
@@ -101,7 +105,7 @@ The bodies you write are long. Two rules keep them useful:
 | `plugins/soong/skills/architect/SKILL.md` | Modified. Gains Step 3.5, and Step 4 changes to walk a queue. |
 | `plugins/soong/.claude-plugin/plugin.json` | Version bump, `0.7.1` to `0.8.0`. |
 
-Five tasks across three chunks. Chunk 1 writes the judge, Chunk 2 writes the
+Six tasks across three chunks. Chunk 1 writes the judge, Chunk 2 writes the
 council, Chunk 3 wires the `architect` skill and releases.
 
 The order matters. The council's dispatch instructions reference the judge's
@@ -645,7 +649,7 @@ for s in "## Resolution" "## Using the Interactions lists" "## The rebuttal roun
 done
 grep -qF 'One round means one round' "$f" && echo "ok: one-round rule" || echo "MISSING: one-round rule"
 grep -qF 'never acted on' "$f" && echo "ok: shared abstain rule" || echo "MISSING: shared abstain rule"
-grep -qF 'One judge' "$f" && grep -qF 'not a council' "$f" && echo "ok: no-fallback rule" || echo "MISSING: no-fallback rule"
+grep -qF "One judge's opinion is not a council" "$f" && echo "ok: no-fallback rule" || echo "MISSING: no-fallback rule"
 ```
 
 Expected: `rule order ok` with rule 1's line number lower than rule 3's, then
@@ -722,22 +726,62 @@ For each finding in whichever queue you are walking:
 
 - [ ] **Step 3: Check Step 4's remaining text still reads correctly**
 
-The rest of Step 4 refers to "the agent" and "the agent's recommendation". Those
-now mean either cobrain or a judge depending on the queue. Read the section and
-adjust the references so they hold in both cases, without rewriting the steps
-themselves. The numbered sub-steps, the instruction to give your own read, and
-the rule against batching all stay.
+Step 2 replaced the only line in Step 4 that named the queue. One reference to
+"the agent" survives, in sub-step 2, and it now means either cobrain or a judge
+depending on which queue you are walking.
 
-Also confirm the existing paragraph about re-dispatching cobrain still reads
-correctly with a council in the flow. It should now say that a re-dispatch of
-cobrain is followed by the council running again on the new findings.
+Find this line:
+
+```markdown
+2. Give your own read: agree, disagree, or a different fix. The agent can be wrong; say
+   so when it is, with a reason.
+```
+
+Replace it with:
+
+```markdown
+2. Give your own read: agree, disagree, or a different fix. A reviewer can be wrong,
+   whether it was cobrain or a judge; say so when it is, with a reason.
+```
+
+Change nothing else in Step 4. The other three numbered sub-steps, the rule
+against batching, and the paragraph about re-dispatching cobrain all stay as
+they are.
+
+Then confirm no stale reference is left:
+
+```bash
+sed -n '/^## Step 4:/,/^## Step 5:/p' plugins/soong/skills/architect/SKILL.md \
+  | grep -n 'the agent' && echo "STALE REFERENCE ABOVE" || echo "ok: no stale agent reference"
+```
+
+Expected: `ok: no stale agent reference`.
+
+One more edit in the same step. The paragraph about re-dispatching cobrain does
+not yet know the council exists. Find it:
+
+```markdown
+Re-dispatch `architect-cobrain` only when a PR was added, removed, or re-ordered.
+Changes inside a single PR's scope get resolved here, on the main thread. A re-dispatch
+starts from an empty context, so pass the revised stack and what changed, not the whole
+spec again.
+```
+
+Add one sentence to the end of it:
+
+```markdown
+Re-dispatch `architect-cobrain` only when a PR was added, removed, or re-ordered.
+Changes inside a single PR's scope get resolved here, on the main thread. A re-dispatch
+starts from an empty context, so pass the revised stack and what changed, not the whole
+spec again. A re-dispatch produces a new finding set, so Step 3.5 runs again on it.
+```
 
 - [ ] **Step 4: Structural check**
 
 ```bash
 f=plugins/soong/skills/architect/SKILL.md
-grep -q '^## Step 3.5' "$f" && echo "ok: step 3.5 present" || echo "MISSING: step 3.5"
-s35=$(grep -n '^## Step 3.5' "$f" | cut -d: -f1)
+grep -q '^## Step 3\.5' "$f" && echo "ok: step 3.5 present" || echo "MISSING: step 3.5"
+s35=$(grep -n '^## Step 3\.5' "$f" | cut -d: -f1)
 s3=$(grep -n '^## Step 3:' "$f" | cut -d: -f1)
 s4=$(grep -n '^## Step 4:' "$f" | cut -d: -f1)
 [ "$s3" -lt "$s35" ] && [ "$s35" -lt "$s4" ] \
@@ -804,7 +848,46 @@ end and confirm each item. Fix what fails before continuing.
 15. No artifact tells a judge or the council to write to Notion.
 16. The invocation form is `/soong:adversarial-council` wherever it appears.
 
-- [ ] **Step 2: Confirm the plugin loads the new files**
+- [ ] **Step 2: Run the behavioral scenarios**
+
+The checklist above is a static read. It confirms the rules are written down,
+not that they behave. These seven scenarios are the spec's test plan, and they
+are the only thing here that catches a rule that reads correctly and behaves
+wrongly.
+
+Each needs a real `architect` run on a spec built to produce the finding shape
+under test. That means they cannot all be run at the moment you finish writing
+the files: some depend on how the judges actually behave. Run what you can now,
+and run the rest on the first real architect invocation. Record which ones you
+have not yet exercised rather than marking this step done on a partial pass.
+
+1. **Mixed finding kinds.** A spec producing one finding already handled in the
+   code, one with an obviously correct fix, and one with a real tradeoff.
+   Confirm the first is dropped silently, the second is applied and reported,
+   and only the third reaches the user.
+2. **The cap.** A spec producing nine or more findings. Confirm the council does
+   not run, the user is told the spec needs rework, and the findings arrive one
+   at a time.
+3. **The blocking notice, both rounds.** A `blocking` finding both judges drop,
+   once where they agree in the first round and once where they agree only after
+   the rebuttal. Confirm the one-line notice appears in both, and that it does
+   not ask for an answer.
+4. **A lens split.** A finding the two lenses read differently. Confirm exactly
+   one rebuttal round runs, and that a finding still split afterwards reaches the
+   user with both positions shown rather than one merged summary.
+5. **A pre-round double abstain.** A finding neither lens can judge. Confirm it
+   reaches the user without a rebuttal round.
+6. **A post-round abstain.** A finding that goes to a rebuttal round and comes
+   back with an `abstain` on one or both sides. Confirm it reaches the user, that
+   no third dispatch runs, and that a shared `abstain` is not acted on.
+7. **The invariants, on any run.** Confirm no judge edited a file, and that the
+   user was never shown two findings in one message.
+
+Scenarios 3 through 6 are the ones worth engineering a spec for. They cover the
+paths that only exist because of the ordered rules, and they are where a
+plausible-looking rewrite of those rules would show up.
+
+- [ ] **Step 3: Confirm the plugin loads the new files**
 
 There is no build step, so this checks placement rather than registration.
 
@@ -813,14 +896,13 @@ test -f plugins/soong/agents/adversarial-judge.md && echo "ok: agent in place" |
 test -f plugins/soong/skills/adversarial-council/SKILL.md && echo "ok: skill in place" || echo "MISSING: skill"
 head -1 plugins/soong/agents/adversarial-judge.md | grep -qx -- '---' && echo "ok: agent frontmatter opens at line 1" || echo "AGENT FRONTMATTER WRONG"
 head -1 plugins/soong/skills/adversarial-council/SKILL.md | grep -qx -- '---' && echo "ok: skill frontmatter opens at line 1" || echo "SKILL FRONTMATTER WRONG"
-grep -c 'skills\|agents' .claude-plugin/marketplace.json
+grep -c 'adversarial' .claude-plugin/marketplace.json
 ```
 
-Expected: four `ok` lines. The last count is informational: `marketplace.json`
-lists plugins, so it should not mention the new skill or agent, and you do not
-edit it.
+Expected: four `ok` lines, then `0`. `marketplace.json` lists plugins, so it
+must not mention the new skill or agent, and you do not edit it.
 
-- [ ] **Step 3: Bump the version**
+- [ ] **Step 4: Bump the version**
 
 ```bash
 sed -i '' 's/"version": "0.7.1"/"version": "0.8.0"/' plugins/soong/.claude-plugin/plugin.json
@@ -833,22 +915,28 @@ A feature takes the minor version, per `CLAUDE.md`. If the current version is
 not `0.7.1`, another change landed first: bump the minor from whatever is there
 rather than forcing `0.8.0`.
 
-- [ ] **Step 4: Confirm the tree is clean and the diff is only what you meant**
-
-```bash
-git status --short
-git diff --stat HEAD~5
-```
-
-Expected: no unstaged changes, and a diff touching exactly four paths: the new
-agent, the new skill, `architect/SKILL.md`, and `plugin.json`.
-
 - [ ] **Step 5: Commit**
 
 ```bash
 git add plugins/soong/.claude-plugin/plugin.json
 git commit -m "chore(release): bump soong to 0.8.0"
 ```
+
+- [ ] **Step 6: Confirm the tree is clean and the diff is only what you meant**
+
+This runs after the commit, so the working tree should be clean and the whole
+feature is six commits back.
+
+```bash
+git status --short
+git diff --stat HEAD~6
+```
+
+Expected: `git status --short` prints nothing, and the diff touches exactly four
+paths: the new agent, the new skill, `architect/SKILL.md`, and `plugin.json`.
+
+If you committed a different number of times than the plan's six, count back to
+the commit before Task 1 rather than trusting `HEAD~6`.
 
 ---
 
