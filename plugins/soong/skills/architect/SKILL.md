@@ -96,12 +96,18 @@ Walk a queue **one at a time**. Which queue depends on Step 3.5:
 * **The council returned a queue.** Walk it in the order the council gives.
 * **The council handed the findings back unfiltered**, because they were over
   the cap or because both judges failed. Walk the full cobrain finding set, in
-  cobrain's priority order.
+  the order cobrain returned them.
 
 Before walking either queue, relay every notice the council gave for a
 `blocking` finding it dropped, and its count of findings dropped silently. The
 notices are not questions and do not wait for an answer, but a swallowed blocker
 the user never hears about is the one thing the notice exists to prevent.
+
+The council may mark a finding as conditional on another finding's answer. When
+the earlier answer makes it moot, do not ask it. Say it was skipped and why. A
+skipped finding counts as resolved for the rule below, because asking a question
+the user has already answered by implication is the waste this filtering exists
+to remove.
 
 An empty council queue means the council resolved everything. Say so, relay the
 notices and the count, list the fixes the council applied, and go to Step 5.
