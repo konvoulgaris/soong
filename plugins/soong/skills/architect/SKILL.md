@@ -42,8 +42,8 @@ back-and-forth actually reaches the user.
 
 **Produce the spec only.** Brainstorming normally ends by invoking
 `superpowers:writing-plans`; do not follow that transition. Stop once the design doc is
-written and the user approves it. The implementation plan is the next session's job, per
-Step 6.
+written and the user approves it. The implementation plan belongs to `develop`, which
+Step 6 hands off to.
 
 A worktree-first hook fires on `superpowers:brainstorming`. This skill writes no code, so
 a worktree buys nothing here, and the spec doc plus the Notion pages are the only output.
