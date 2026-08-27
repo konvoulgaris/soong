@@ -467,10 +467,10 @@ Send both judges in one message so they run at the same time. Use the Agent
 tool with `subagent_type: adversarial-judge` for each.
 
 Label the findings first. Cobrain emits no identifiers, so give each finding a
-label, `F1` upward, in the order cobrain returned them. Use those same labels for both
-judges, for both rebuttal dispatches, and in everything you report. The labels
-are how you pair the two judges' verdicts, and a verdict you cannot pair is a
-verdict you cannot resolve.
+label, `F1` upward, in the order cobrain returned them. Use those same labels
+for both judges, for both rebuttal dispatches, and in everything you report.
+The labels are how you pair the two judges' verdicts, and a verdict you cannot
+pair is a verdict you cannot resolve.
 
 Do not renumber for the rebuttal round. A contested subset keeps its original
 labels, so `F4` is the same finding in both rounds.
