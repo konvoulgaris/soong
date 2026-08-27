@@ -250,7 +250,7 @@ and the first one that matches decides.
 
 | # | Condition | Outcome |
 | --- | --- | --- |
-| 1 | both judges `abstain` | straight to the user, no rebuttal |
+| 1 | both judges `abstain` | straight to the user, skipping any rebuttal |
 | 2 | either judge `abstain` | contested |
 | 3 | both judges same verdict | act on that verdict |
 | 4 | verdicts differ | contested |
@@ -267,11 +267,15 @@ agreement.
 A finding that a judge did not return a verdict for counts as `abstain`. A
 verdict for a finding that cobrain did not report is discarded.
 
-The four rules cover all sixteen pairs of the four verdict values, and order
-resolves the two pairs that match more than one rule. One pair, both `abstain`,
-takes rule 1. Six pairs where exactly one judge abstains take rule 2. Three
-pairs, both `drop`, both `auto-resolve`, or both `needs-user`, take rule 3. The
-remaining six pairs take rule 4.
+The four rules cover all sixteen pairs of the four verdict values. One pair, both
+`abstain`, takes rule 1. Six pairs where exactly one judge abstains take rule 2.
+Three pairs, both `drop`, both `auto-resolve`, or both `needs-user`, take rule 3.
+The remaining six pairs take rule 4.
+
+Order matters for the seven pairs that match more than one rule, and changes the
+outcome for one of them: both `abstain`, which rule 1 claims before rule 3 can
+treat it as agreement. The other six are the one-judge-abstain pairs, which match
+rules 2 and 4 and get "contested" from either.
 
 ### Using the Interactions lists
 
@@ -306,13 +310,20 @@ skill states this as a rule rather than leaving it implied, because a second
 round of disagreement reads as an invitation to run a third, and a council that
 keeps arguing never reaches the user.
 
-After the round:
+After the round, the same four ordered rules apply again to the two fresh
+verdicts. Only rule 3 can now act on a finding, and it acts only on a shared
+`drop`, `auto-resolve`, or `needs-user`. Rules 1, 2, and 4 all send the finding
+to the user, because there is no further round to send it to:
 
-* Converged, so act on the shared verdict.
-* Still split, so the finding becomes a question for the user, and the user sees
-  **both** judges' positions rather than one merged summary. A real disagreement
-  between two informed judges is information, and merging it into one paragraph
-  throws that information away.
+* **Rule 3, converged.** Act on the shared verdict.
+* **Rule 4, still split.** The finding becomes a question for the user, and the
+  user sees **both** judges' positions rather than one merged summary. A real
+  disagreement between two informed judges is information, and merging it into
+  one paragraph throws that information away.
+* **Rules 1 and 2, an `abstain` on either side or both.** The finding goes to the
+  user with each judge's stated reason. A shared `abstain` is never acted on. It
+  is agreement that neither judge can judge the finding, which is the same
+  undefined state before the round and after it.
 
 ### Acting on agreement
 
@@ -343,10 +354,15 @@ decision would be its most silent one.
 * **One judge fails, or returns output the main thread cannot parse.** Every
   finding in that set is contested. The council never decides a finding on one
   judge's verdict.
+* **The same judge fails again in the rebuttal round.** Every finding stays
+  contested, so every finding goes to the user. There is no second rebuttal, and
+  the council does not fall back to the surviving judge's verdicts. One judge's
+  opinion is not a council.
 * **Both judges fail.** The council reports the failure. Every finding goes to
   the user one at a time, which is the pre-council behavior.
 
-A council failure must never make a finding disappear.
+A council failure must never make a finding disappear. Every failure path above
+ends with the findings in front of the user rather than resolved without one.
 
 ### Standalone use
 
@@ -464,7 +480,10 @@ ships. Verification is manual, through real architect runs on this repository.
    positions shown.
 5. A finding neither lens can judge. Confirm it reaches the user without a
    rebuttal round.
-6. Any run. Confirm no judge edited a file, and that the user was never shown two
+6. A finding that goes to a rebuttal round and comes back with an `abstain` on
+   one or both sides. Confirm it reaches the user, that no third dispatch runs,
+   and that a shared `abstain` is not treated as a verdict to act on.
+7. Any run. Confirm no judge edited a file, and that the user was never shown two
    findings in one message.
 
 ## Open questions
