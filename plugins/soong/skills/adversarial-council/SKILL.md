@@ -56,10 +56,10 @@ Send both judges in one message so they run at the same time. Use the Agent
 tool with `subagent_type: adversarial-judge` for each.
 
 Label the findings first. Cobrain emits no identifiers, so give each finding a
-label, `F1` upward, in cobrain's priority order. Use those same labels for both
-judges, for both rebuttal dispatches, and in everything you report. The labels
-are how you pair the two judges' verdicts, and a verdict you cannot pair is a
-verdict you cannot resolve.
+label, `F1` upward, in the order cobrain returned them. Use those same labels
+for both judges, for both rebuttal dispatches, and in everything you report.
+The labels are how you pair the two judges' verdicts, and a verdict you cannot
+pair is a verdict you cannot resolve.
 
 Do not renumber for the rebuttal round. A contested subset keeps its original
 labels, so `F4` is the same finding in both rounds.
@@ -184,10 +184,16 @@ after arguing is still a drop.
 
 ## Asking the user
 
-Walk the queue in cobrain's priority order, except where an Interactions entry
-says one finding must be asked before another. That ordering wins over
-priority, because asking a moot question wastes the attention this skill exists
-to save.
+These rules govern the walk. You walk the queue yourself when you were invoked
+directly. Under the `architect` skill, its Step 4 owns the walk and these rules
+bind Step 4, so do not walk the queue here and leave Step 4 to walk it again.
+
+Walk in the order cobrain returned the findings, except where an Interactions
+entry says one finding must be asked before another. That ordering wins, because
+asking a moot question wastes the attention this skill exists to save.
+
+A finding the user's answer has made moot is not asked at all. Say it was
+skipped and why. A skipped finding is resolved, not outstanding.
 
 One finding per message. Never a batch, and never a numbered list of questions
 in one message.
