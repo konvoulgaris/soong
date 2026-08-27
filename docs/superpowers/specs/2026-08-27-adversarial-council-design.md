@@ -418,10 +418,16 @@ the pull request stack, and the files each finding touches.
 Step 4 walks a queue rather than every cobrain finding by default. Which queue
 depends on whether the council ran:
 
-* **The council ran.** Step 4 walks the council's queue.
-* **The council did not run**, because the findings were over the cap or because
-  both judges failed. Step 4 walks the full cobrain finding set, in cobrain's
-  priority order. This is the behavior the skill had before this change.
+* **The council returned a queue.** Step 4 walks it, in the council's order.
+* **The council handed the findings back unfiltered**, because they were over
+  the cap or because both judges failed. Step 4 walks the full cobrain finding
+  set, in cobrain's priority order. This is the behavior the skill had before
+  this change.
+
+Step 4 relays the council's notices for dropped `blocking` findings, and its
+count of findings dropped silently, before it walks either queue. The notice is
+worthless if the step that owns the user's attention never passes it on, and the
+empty-queue path is where the user sees nothing else.
 
 The rest of Step 4 is unchanged in both cases: one finding per message, the main
 thread gives its own read and may disagree with a judge, the user decides, and
