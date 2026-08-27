@@ -226,6 +226,12 @@ earlier step can stop for free.
    ledger entry is a first run by definition. Say plainly that the earlier answers
    were lost, rather than re-asking as though nothing happened.
 
+   Confirm the worktree directory is ignored before creating anything inside it.
+   This repository ignores `.claude/worktrees/` through `.git/info/exclude`, which
+   is local to one clone and never travels with it, so a fresh clone would leave
+   the path untracked rather than ignored. Add it to `.gitignore` and commit that
+   if it is not already ignored there.
+
    Never run in the worktree the user is sitting in: branches advance in place
    here, and swapping a branch under an open editor is the failure this avoids.
 
@@ -370,32 +376,49 @@ below it.
 
 ### A task that was interrupted
 
-A task the previous run died inside. The ledger cannot say how far it got, since
-the run died before writing that down, so establish the state from git and `gh`
-rather than from the ledger.
+This section covers two dispositions that loop step 1 routes here: a task a
+previous run died inside, and a task that `stopped` deliberately. The second is
+settled at the end and never resumed. For the first, the ledger cannot say how
+far the run got, because it died before writing that down, so establish the state
+from git and `gh` rather than from the ledger.
 
-Ask two questions, in this order:
+Establish two facts, in this order. Check the branch out first, so both commands
+read the right branch.
 
 ```bash
-gh pr list --head <branch> --state open --json number,url   # is there a pull request?
-git rev-parse --abbrev-ref '@{u}' 2>/dev/null               # is it pushed?
-git log --oneline '@{u}'..HEAD                              # anything unpushed?
+gh pr list --head <branch> --state all --json number,url,state   # any pull request?
+git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 \
+  && git log --oneline '@{u}'..HEAD                              # unpushed commits?
 ```
+
+Query `--state all`, not `--state open`: a pull request closed or merged between
+runs is not the same as no pull request, and treating it as one would open a
+second pull request for the same task.
+
+**Unpushed commits** means either that `git rev-parse` failed, so the branch has
+no upstream and nothing is pushed, or that `git log` printed something. Push
+before doing anything else in the first two cases below, because a stale remote
+makes the next task branch off a tip that was never published.
 
 That gives three states, each resumed at a different step:
 
-- **A pull request is open.** The run died between opening it and recording it.
-  Do not re-run the earlier steps and do not call `gh pr create` again, which
-  fails on a branch that already has an open pull request. Do loop step 8 alone:
-  record the found url and set the card status. Then continue to the next task.
-- **Pushed, no pull request.** The run died between the push and the pull
-  request. The work is complete and safe on the remote, so re-planning and
-  re-implementing it would duplicate it. Resume at loop step 7 and open the pull
-  request. Push again first if `git log '@{u}'..HEAD` shows commits the remote
-  does not have.
-- **Not pushed.** The only genuinely ambiguous state: the commits are local and
-  partial, and nothing outside this machine knows about them. Check the branch
-  out, report what it contains, and ask whether to continue on it or reset it.
+- **An open pull request exists.** The run died between opening it and recording
+  it. Do not re-run the earlier steps and do not call `gh pr create` again, which
+  fails on a branch that already has an open pull request. Push if there are
+  unpushed commits, then do loop step 8 alone: record the found url and set the
+  card status. Then continue to the next task.
+- **Pushed, no open pull request.** The run died between the push and the pull
+  request. The work is safe on the remote, so re-planning and re-implementing it
+  would duplicate it. Push anything outstanding, then resume at loop step 7 and
+  open the pull request.
+
+  A pull request that `--state all` reports as **closed or merged** is not this
+  state. Report it and stop: something outside this run acted on the branch, and
+  opening a second pull request for the same task is not a decision to make
+  unattended.
+- **Nothing pushed.** The only genuinely ambiguous state: the commits are local
+  and partial, and nothing outside this machine knows about them. Report what the
+  branch contains and ask whether to continue on it or reset it.
 
 Never delete the branch, force-push it, or start a second one. Only the last case
 asks the user, because only there can guessing destroy work that is not
@@ -538,7 +561,9 @@ than the first pull request only.
 | A branch that already exists at loop step 1 | Resolve it in the interrupted-task path. Never force-push and never start a second branch |
 | An open pull request on an interrupted task's branch | Do loop step 8 alone. Never re-run `gh pr create` on it |
 | An interrupted task pushed with no pull request | Resume at loop step 7. Never re-implement it |
-| An interrupted task with unpushed commits | Ask the user. The only state where guessing loses work |
+| An interrupted task with unpushed commits and no pull request | Ask the user. The only state where guessing loses work |
+| An interrupted task whose pull request was closed or merged elsewhere | Report it and stop. Never open a second one for the same task |
+| A worktree path that is ignored only via `.git/info/exclude` | Add it to `.gitignore` and commit that first |
 | A `stopped` task reached on resume | Report `stoppedBecause` and stop. Never retry it automatically |
 | A worktree on disk with no ledger entry | Reuse it, say the earlier answers were lost |
 | A `--draft` on a resume that disagrees with the ledger | Report it, keep the recorded value |
