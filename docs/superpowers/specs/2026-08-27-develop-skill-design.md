@@ -327,9 +327,10 @@ For each unskipped task in stack order, in that one worktree:
 7. **Open the pull request.** Invoke `soong:manage-pr` in compose mode with:
 
    - `--non-interactive`, because the stack is meant to run unattended.
-   - `--base <previous task's branch>`, or `main` for the first task built. Without
-     this the pull request would target the repository default branch and the
-     stack would not be a stack.
+   - `--base <previous unskipped task's branch>`, or `main` for the first task
+     built. This is the same base step 2 branched from, read from the ledger, not
+     recomputed. Without it the pull request would target the repository default
+     branch and the stack would not be a stack.
    - `--notion-card <this task's page url>`, so compose writes the card into the
      pull request record itself rather than this skill overwriting the record
      afterward.
