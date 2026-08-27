@@ -67,13 +67,38 @@ Give it, explicitly: the spec path, the proposed PR stack as a list, and the fil
 globs each PR touches. Naming the files keeps the agent verifying rather than
 rediscovering the codebase from zero.
 
+## Step 3.5: Filter the findings with the council
+
+Invoke the `adversarial-council` skill with cobrain's findings, the spec path,
+the pull request stack, and the files each finding touches.
+
+The council sends the findings to two `adversarial-judge` agents on different
+evidence, argues out the disagreements, and returns three things: the findings
+that need a decision from the user, the fixes it applied to the spec on its own,
+and a notice for any `blocking` finding it dropped.
+
+The council can decline to run. With no findings there is nothing to filter.
+With more than eight it says the spec needs rework instead, and hands every
+finding back unfiltered. Step 4 handles both.
+
 ## Step 4: Address the review with the user, before Notion
 
-Walk the agent's findings **one at a time**, in the agent's priority order. For each one:
+Walk a queue **one at a time**. Which queue depends on Step 3.5:
+
+* **The council ran.** Walk the council's queue, in the order the council gives.
+* **The council did not run**, because the findings were over the cap or because
+  both judges failed. Walk the full cobrain finding set, in cobrain's priority
+  order.
+
+An empty council queue means the council resolved everything. Say so, list the
+fixes the council applied, and go to Step 5. An empty cobrain finding set means
+the same without a council.
+
+For each finding in whichever queue you are walking:
 
 1. Show the finding and its recommendation.
-2. Give your own read: agree, disagree, or a different fix. The agent can be wrong; say
-   so when it is, with a reason.
+2. Give your own read: agree, disagree, or a different fix. A reviewer can be wrong,
+   whether it was cobrain or a judge; say so when it is, with a reason.
 3. Get the user's decision.
 4. Apply accepted changes to the spec.
 
@@ -83,7 +108,7 @@ finding is resolved.
 Re-dispatch `architect-cobrain` only when a PR was added, removed, or re-ordered.
 Changes inside a single PR's scope get resolved here, on the main thread. A re-dispatch
 starts from an empty context, so pass the revised stack and what changed, not the whole
-spec again.
+spec again. A re-dispatch produces a new finding set, so Step 3.5 runs again on it.
 
 ## Step 5: Write to Notion
 
