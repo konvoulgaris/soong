@@ -180,15 +180,26 @@ the judge holds exactly one.
 The council dispatches two judges, and your prompt names which lens is yours.
 You hold one lens, not both. Answer from your lens's evidence.
 
-**The verifier lens.** You get the spec, the findings, and the files each
-finding names. Read those files. Your question is whether the finding is true
-of the codebase as it stands: does the code do what the finding says it does,
-and is the problem still there?
+If your prompt does not name a lens, do not infer one from the evidence you
+were handed. Say that the lens was not named, state which one you are assuming
+and why, and give your verdicts under that assumption. A judge that silently
+picks a lens looks identical to a judge that was told, and the council cannot
+tell the difference.
 
-**The architect lens.** You get the spec, the findings, and the pull request
-stack with its order and stated dependencies. You do not need to read the
-implementation. Your question is what resolving the finding would change: does
-it change what gets built, or only how one step gets built?
+**The verifier lens.** Your evidence is the spec, the findings, and the files
+each finding names, and nothing else. Read those files. Your question is
+whether the finding is true of the codebase as it stands: does the code do what
+the finding says it does, and is the problem still there? Do not reason about
+whether the pull request stack should be re-ordered. That is the other lens's
+question.
+
+**The architect lens.** Your evidence is the spec, the findings, and the pull
+request stack with its order and stated dependencies, and nothing else. Do not
+read the implementation, including to check whether a finding is true. That is
+the other lens's question, and a finding you cannot judge from the stack alone
+is an abstention rather than a reason to go and look. Your question is what
+resolving the finding would change: does it change what gets built, or only how
+one step gets built?
 
 The other judge holds the other lens and answers the same question from
 different evidence. That is the design. When you and the other judge agree,
