@@ -152,10 +152,15 @@ than different roles is what makes agreement mean something.
 
 One **Interactions** list, written once and not per finding. It names findings
 that duplicate each other, and findings where accepting one makes another moot.
+Each entry names the findings it links and states the relationship in one
+sentence.
 
 This list is why the council sends all findings to one judge in one dispatch
 instead of sending one finding at a time. A judge that sees the whole set can
 see that two findings are the same concern. A judge that sees one finding cannot.
+
+An Interactions entry never changes a verdict. It changes how the main thread
+presents the findings to the user, which the council skill covers below.
 
 ### Read-only rule
 
@@ -165,6 +170,15 @@ The agent file states the rule the same way `architect-cobrain` states it: use
 No redirects. No `sed -i`. No `git` command that changes state.
 
 The judge holds no Notion tools by design.
+
+### No new findings
+
+The agent file states the constraint where the behavior originates, and not only
+in the council skill: the judge classifies the findings it receives, and reports
+no finding of its own. A problem the judge notices that cobrain did not report
+belongs in that judge's reasoning for a related finding, and does not become a
+new entry. The council discards any verdict for a finding cobrain did not report,
+so a judge that invents one produces nothing.
 
 ## Component 2: adversarial-council skill
 
@@ -178,7 +192,7 @@ description: Filter a set of architecture review findings down to the ones that
   agents on different evidence lenses, runs one rebuttal round where they
   disagree, and returns what to drop, what to auto-apply, and what to ask.
   Use after architect-cobrain returns findings, or when the user runs
-  /adversarial-council.
+  /soong:adversarial-council.
 ---
 ```
 
@@ -231,20 +245,48 @@ the full finding set, the spec, and its own lens's evidence.
 
 ### Resolution
 
-The main thread compares the two verdict sets per finding.
+The main thread compares the two verdict sets per finding. The rules are ordered,
+and the first one that matches decides.
 
-| Judge 1 | Judge 2 | Outcome |
+| # | Condition | Outcome |
 | --- | --- | --- |
-| same verdict | same verdict | act on it |
-| any | `abstain` | contested |
-| differs | differs | contested |
+| 1 | both judges `abstain` | straight to the user, no rebuttal |
+| 2 | either judge `abstain` | contested |
+| 3 | both judges same verdict | act on that verdict |
+| 4 | verdicts differ | contested |
 
-An `abstain` from either judge is a split. Uncertainty never counts as
+Rule 1 precedes rule 3 on purpose. Two judges that both `abstain` do agree, but
+they agree that neither can judge the finding, and there is no verdict to act on.
+A rebuttal round between two judges who both said they lack evidence produces
+nothing, so the finding skips the round and goes to the user with each judge's
+stated reason for abstaining. Nothing the council cannot judge is ever dropped.
+
+An `abstain` from either judge is otherwise a split. Uncertainty never counts as
 agreement.
 
-A finding that a judge did not return a verdict for counts as `abstain`, and so
-counts as contested. A verdict for a finding that cobrain did not report is
-discarded.
+A finding that a judge did not return a verdict for counts as `abstain`. A
+verdict for a finding that cobrain did not report is discarded.
+
+Only rules 3 and 4 can produce agreement or a rebuttal, so the four verdict
+values give the same four outcomes for every one of the sixteen pairs.
+
+### Using the Interactions lists
+
+The main thread merges both judges' Interactions lists and uses the result only
+when it presents findings to the user:
+
+* Findings the judges called duplicates are asked as **one** question, naming
+  every finding it covers.
+* When accepting finding A makes finding B moot, A is asked first, and B is
+  asked only if the user's answer to A leaves it standing.
+
+An entry that appears on one judge's list and not the other's still applies. The
+lists say which findings relate, not whether a finding is real, so there is
+nothing to reconcile between them and one judge noticing a link is enough. An
+entry that names a finding that does not exist is discarded, as with verdicts.
+
+The rebuttal round does not carry the Interactions lists. The rebuttal settles
+verdicts, and an entry cannot change a verdict.
 
 ### Rebuttal round
 
@@ -254,6 +296,12 @@ findings, and each keeps its own lens.
 
 The rebuttal carries the contested subset only. Findings the judges already
 agreed on are not re-litigated.
+
+One round means one round. A finding still contested after the round goes to the
+user, and the council does not dispatch a third time to try to settle it. The
+skill states this as a rule rather than leaving it implied, because a second
+round of disagreement reads as an invitation to run a third, and a council that
+keeps arguing never reaches the user.
 
 After the round:
 
@@ -299,9 +347,9 @@ A council failure must never make a finding disappear.
 
 ### Standalone use
 
-`/adversarial-council` works outside the `architect` skill, and needs findings
-supplied to it. With no findings, the skill asks for them. It never produces a
-review of its own to fill the gap.
+The user invokes the skill as `/soong:adversarial-council`. It works outside the
+`architect` skill, and needs findings supplied to it. With no findings, the skill
+asks for them. It never produces a review of its own to fill the gap.
 
 ## Component 3: architect skill changes
 
@@ -315,13 +363,22 @@ the pull request stack, and the files each finding touches.
 
 ### Changed Step 4
 
-Step 4 walks the council's queue rather than every cobrain finding. The rest of
-Step 4 is unchanged: one finding per message, the main thread gives its own read
-and may disagree with a judge, the user decides, and accepted changes go into the
-spec.
+Step 4 walks a queue rather than every cobrain finding by default. Which queue
+depends on whether the council ran:
 
-An empty queue means the council resolved everything. Step 4 says so, lists the
-fixes applied under `auto-resolve`, and proceeds to Notion.
+* **The council ran.** Step 4 walks the council's queue.
+* **The council did not run**, because the findings were over the cap or because
+  both judges failed. Step 4 walks the full cobrain finding set, in cobrain's
+  priority order. This is the behavior the skill had before this change.
+
+The rest of Step 4 is unchanged in both cases: one finding per message, the main
+thread gives its own read and may disagree with a judge, the user decides, and
+accepted changes go into the spec. The user is never shown a batch of findings in
+one message, whichever queue Step 4 is walking.
+
+An empty council queue means the council resolved everything. Step 4 says so,
+lists the fixes applied under `auto-resolve`, and proceeds to Notion. An empty
+cobrain finding set means the same thing without a council, and Step 4 proceeds.
 
 ### Gates that do not change
 
@@ -344,28 +401,33 @@ digraph council {
     "N == 0?" [shape=diamond];
     "Skip council" [shape=box];
     "Dispatch both judges\n(verifier lens, architect lens)" [shape=box];
+    "Both judges failed?" [shape=diamond];
     "Compare verdicts,\nmerge interactions" [shape=box];
     "Any contested?" [shape=diamond];
     "One rebuttal round,\ncontested only" [shape=box];
     "Resolve" [shape=box];
-    "Walk queue with user,\none at a time" [shape=doublecircle];
+    "Walk cobrain findings\nwith user, one at a time" [shape=doublecircle];
+    "Walk council queue\nwith user, one at a time" [shape=doublecircle];
     "Write to Notion" [shape=doublecircle];
 
     "cobrain returns N findings" -> "N > 8?";
     "N > 8?" -> "Council does not run;\ntell user spec needs rework" [label="yes"];
-    "Council does not run;\ntell user spec needs rework" -> "Walk queue with user,\none at a time";
+    "Council does not run;\ntell user spec needs rework" -> "Walk cobrain findings\nwith user, one at a time";
     "N > 8?" -> "N == 0?" [label="no"];
     "N == 0?" -> "Skip council" [label="yes"];
     "Skip council" -> "Write to Notion";
     "N == 0?" -> "Dispatch both judges\n(verifier lens, architect lens)" [label="no"];
-    "Dispatch both judges\n(verifier lens, architect lens)" -> "Compare verdicts,\nmerge interactions";
+    "Dispatch both judges\n(verifier lens, architect lens)" -> "Both judges failed?";
+    "Both judges failed?" -> "Walk cobrain findings\nwith user, one at a time" [label="yes"];
+    "Both judges failed?" -> "Compare verdicts,\nmerge interactions" [label="no"];
     "Compare verdicts,\nmerge interactions" -> "Any contested?";
     "Any contested?" -> "One rebuttal round,\ncontested only" [label="yes"];
     "One rebuttal round,\ncontested only" -> "Resolve";
     "Any contested?" -> "Resolve" [label="no"];
-    "Resolve" -> "Walk queue with user,\none at a time" [label="queue non-empty"];
+    "Resolve" -> "Walk council queue\nwith user, one at a time" [label="queue non-empty"];
     "Resolve" -> "Write to Notion" [label="queue empty"];
-    "Walk queue with user,\none at a time" -> "Write to Notion";
+    "Walk cobrain findings\nwith user, one at a time" -> "Write to Notion";
+    "Walk council queue\nwith user, one at a time" -> "Write to Notion";
 }
 ```
 
@@ -381,6 +443,31 @@ skips the council, and a step the user skips protects nothing. Per-finding
 dispatch also cannot produce the Interactions list, because a judge that sees
 one finding cannot see that two findings are the same concern.
 
+## Testing
+
+Both artifacts are prose, so there is no unit to assert against and no test file
+ships. Verification is manual, through real architect runs on this repository.
+
+1. A spec with a mix of finding kinds: one already handled in the code, one with
+   one obviously correct fix, one with a real tradeoff. Confirm the first is
+   dropped silently, the second is applied and reported, and the third reaches
+   the user as a question.
+2. A spec that produces nine or more findings. Confirm the council does not run,
+   the user is told the spec needs rework, and the findings arrive one at a time.
+3. A finding cobrain marked `blocking` that both judges drop. Confirm the
+   one-line notice appears and does not ask for an answer.
+4. A finding the two lenses read differently. Confirm exactly one rebuttal round
+   runs, and that a finding still split afterwards reaches the user with both
+   positions shown.
+5. A finding neither lens can judge. Confirm it reaches the user without a
+   rebuttal round.
+6. Any run. Confirm no judge edited a file, and that the user was never shown two
+   findings in one message.
+
+## Open questions
+
+None.
+
 ## Decisions and rejected alternatives
 
 | Decision | Chosen | Rejected |
@@ -392,6 +479,7 @@ one finding cannot see that two findings are the same concern.
 | Above the cap | Council does not run, user walks all findings | Council runs on the top eight; cobrain caps its own output |
 | Who orchestrates | Main thread, through a skill | A council agent that dispatches the judges |
 | Unresolved disagreement | Goes to the user, with both positions | A third judge decides |
+| Both judges abstain | Straight to the user, no rebuttal | Treated as agreement; a rebuttal round between two judges who lack evidence |
 | Dropping a `blocking` finding | Allowed, with a one-line notice | Forbidden; allowed silently |
 
 A third judge to break ties was rejected because a genuine split on "does this
