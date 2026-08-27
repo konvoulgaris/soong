@@ -68,6 +68,11 @@ Deriving both from data that exists before the run starts is what makes the
 interrupted-work check and the worktree reuse check possible. A name invented at
 creation time could not be recomputed by the run that has to find it.
 
+The branch name is derived once, in first-run step 6, and recorded in the ledger
+for every task. Later steps and later runs read it from there. The worktree path
+is derived from the roadmap item id on every run, which needs nothing but the
+argument the user passed.
+
 ## Decisions
 
 | # | Question | Chosen | Rejected |
@@ -226,8 +231,16 @@ earlier step can stop for free.
 
 6. **Write the ledger entry.** Create the entry for this roadmap item: the
    resolved order, the resolved skip ids, the answers from step 4, the worktree
-   path from step 5, and every unskipped task at `pending` with a null branch and
-   a null pull request.
+   path from step 5, and every unskipped task at `pending`, with its **derived
+   branch name** recorded and its pull request null.
+
+   Record the branch name now, at the one point where every task title is in
+   hand, rather than leaving it to be re-derived later. A resume reads `order`
+   from the ledger and re-queries Notion only to confirm the tasks still exist,
+   so it never has the titles; and a card retitled between runs would derive a
+   different name and orphan the branch the earlier run created. The name is
+   recorded before any branch exists, so it is a plan, not a claim that the
+   branch is there.
 
    This is the first write of the run, and it is what makes the run resumable.
 
@@ -235,10 +248,9 @@ earlier step can stop for free.
 
 For each unskipped task in stack order, in that one worktree:
 
-1. **Check for interrupted work, before branching.** Derive this task's branch
-   name per **Names** above. Do not read it from the ledger: on a task still at
-   `pending` the ledger's branch is null, and that is one of the cases this check
-   exists to catch.
+1. **Check for interrupted work, before branching.** Read this task's branch
+   name from the ledger, where first-run step 6 recorded it. Every task has one
+   from the moment the entry exists, whether or not the branch itself does.
 
    Go to "A task that was interrupted" and resolve it there first if any of these
    holds:
@@ -246,17 +258,18 @@ For each unskipped task in stack order, in that one worktree:
    - The task is `in-progress`.
    - The task is `stopped`. The ledger promises no automatic retry, so a stopped
      task is never resumed by falling through to the next step.
-   - The task is `pending` and its derived branch already exists in the
-     repository.
+   - The task is `pending` and its recorded branch already exists in the
+     repository. That combination means a previous run created the branch and
+     died before marking it.
 
    None of those, continue. This check owns the collision, and step 3's re-check
    and everything after it assume a branch this run created.
 
-2. **Branch.** Create the derived branch off the previous unskipped task's
+2. **Branch.** Create the recorded branch off the previous unskipped task's
    branch. The first task built is based on `main`.
 
-   Mark the task `in-progress` in the ledger with its branch name, before any
-   work happens on it.
+   Mark the task `in-progress` before any work happens on it. The branch name is
+   already recorded, so this writes the status only.
 
 3. **Re-check the answers.** Read the diff the stack has built so far,
    `git diff main...HEAD`, and check this task's recorded answers against it.
@@ -421,7 +434,7 @@ A stop at task 4 must not mean rebuilding tasks 1 through 3.
         "tasks": {
           "<task-id>": {
             "status": "pending | in-progress | done | stopped",
-            "branch": "<branch-or-null>",
+            "branch": "<derived-at-entry-creation>",
             "pr": "<url-or-null>",
             "stoppedBecause": "<reason-or-null>"
           }
@@ -441,8 +454,8 @@ Every field is written by a named step and read by a named step:
 | `order` | First run step 6 | Resume step 2, the loop |
 | `skipped` | First run step 6 | Resume step 3, the loop |
 | `answers` | First run step 6 | Loop steps 3 and 4 |
-| `tasks[].status` | Loop steps 2, 3, 8 | Resume, to find the first task not `done`; loop step 1 and the interrupted-task path |
-| `tasks[].branch` | Loop step 2 | Loop steps 6 and 7, to push and to set `--base`; loop step 1 and the interrupted-task path derive it instead, since it can be null there |
+| `tasks[].status` | First run step 6 at `pending`, then loop steps 2, 3, 8 | Resume, to find the first task not `done`; loop step 1 and the interrupted-work path |
+| `tasks[].branch` | First run step 6, from the task title | Loop step 1 to detect an existing branch, step 2 to create it, steps 6 and 7 to push and to set `--base`, and the interrupted-work path |
 | `tasks[].pr` | Loop step 8 | Reported on resume |
 | `tasks[].stoppedBecause` | Loop step 3 | Reported on resume, by the interrupted-work path |
 | `worktree` | First run step 6, and resume step 5 if recreated | Resume step 5, and every loop step, which all run inside it |
