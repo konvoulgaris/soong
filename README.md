@@ -24,6 +24,4 @@ them:
 
 - **superpowers** — `/architect` runs `superpowers:brainstorming` to turn a request
   into a spec.
-- **handoff** — `/architect` uses it to write the handoff document for the next
-  session.
 - **Notion MCP** — every skill that reads or writes a Notion card.
