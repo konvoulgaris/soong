@@ -252,6 +252,17 @@ The council does not run. There is nothing to filter.
 Both judges go out in one message so they run at the same time. Each receives
 the full finding set, the spec, and its own lens's evidence.
 
+**Labels.** Cobrain emits no identifiers, so the council labels each finding
+`F1` upward in cobrain's priority order and uses those labels for both judges,
+both rebuttal dispatches, and everything it reports. The labels are how the two
+verdict sets get paired.
+
+Pairing by position instead would fail silently. A judge that reorders its own
+report hands back the right verdict against the wrong finding, and that pairs
+cleanly under the resolution rules, so nothing downstream can detect it. A
+contested subset therefore keeps its original labels rather than being
+renumbered for the rebuttal round.
+
 ### Resolution
 
 The main thread compares the two verdict sets per finding. The rules are ordered,
@@ -337,8 +348,15 @@ to the user, because there is no further round to send it to:
 ### Acting on agreement
 
 * `drop` - dropped, and the user is not told. One exception below.
-* `auto-resolve` - the main thread applies the fix to the spec. The council
-  lists every fix it applied when it reports.
+* `auto-resolve` - the main thread applies the fix to the spec, before it walks
+  the queue, and lists every fix it applied when it reports. Applying the fixes
+  first keeps the council from asking the user about a spec it is about to
+  change.
+
+  One exception: a fix that would add, remove, re-order, or re-split a pull
+  request is not applied. That change makes cobrain's findings stale and needs a
+  fresh review, per the re-dispatch rule below, so it is queued for the user
+  with the stack change named.
 * `needs-user` - queued for the user.
 
 ### The blocking exception
@@ -357,7 +375,9 @@ about is the thing the notice exists to prevent.
 ### Output
 
 * The queue of findings for the user, each with its question, and with both
-  positions where the judges stayed split.
+  positions where the judges stayed split. The queue is walked in cobrain's
+  priority order, except that an Interactions ordering constraint wins over
+  priority.
 * The list of fixes applied under `auto-resolve`.
 * One-line notices for dropped `blocking` findings.
 * A count of findings dropped silently.
