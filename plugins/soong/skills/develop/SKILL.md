@@ -233,7 +233,8 @@ For each unskipped task in stack order, in that one worktree:
 
 5. **Implement.** Invoke `superpowers:subagent-driven-development` on that plan.
    Its own two stages, spec compliance then code quality, are the quality gate.
-   This skill adds no review of its own and skips neither of those.
+   This skill adds no review of its own at this step and skips neither of those.
+   Loop step 7 adds one more, by way of compose.
 
    That skill normally ends by invoking `finishing-a-development-branch`. Do not
    follow that transition. Steps 6 through 8 here are the finish for one task, and
@@ -262,6 +263,16 @@ For each unskipped task in stack order, in that one worktree:
      pull request record itself rather than this skill overwriting the record
      afterward.
    - `--draft` only if the user passed `--draft`.
+
+   Compose leaves the remote tip matching `HEAD`, so this step does not re-push.
+   The next task branches off this branch's local tip, so any commit compose
+   added carries into the stack.
+
+   If compose reports a failing check, stop the stack there. Record the task
+   `stopped` with `stoppedBecause` naming the check, and report it. Not
+   `in-progress`: that routes the resume back into step 7, which fails the same
+   way. Do not open the pull request, and do not start the next task on a branch
+   that fails its own check.
 
 8. **Record it.** Mark the task `done` in the ledger with its branch and pull
    request url.
@@ -448,6 +459,7 @@ Two things the ledger deliberately does not do:
 | A recorded worktree that is gone on resume | Create a new one off `main`, record it, say so |
 | A task in Notion that the ledger's order lacks | Report it, do not add it to the running stack |
 | No matching card status option | Skip the status write, say so, continue |
+| `polish` fails its check at loop step 7 | Record `stopped` with `stoppedBecause`. Never resume it automatically |
 | The pull request guard hook denies `gh` | Fix the title or body per its reason and retry. Never bypass it |
 
 ## Rules

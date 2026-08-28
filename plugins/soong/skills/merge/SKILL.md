@@ -51,9 +51,10 @@ Track these as todos and do them in order.
 9. `git push` (normal push — a merge commit or fast-forward needs no force).
 10. Check for an open PR on this branch: `gh pr view --json number -q .number`. If one
     exists, a merge is a natural finishing step, so use the `manage-pr` skill to refresh
-    the PR title and description — invoke it with `--non-interactive` so it drafts and
-    updates the PR without pausing for confirmation. If no PR exists, skip this step
-    silently.
+    the PR title and description — invoke it with `--non-interactive --no-polish` so it
+    drafts and updates the PR without pausing for confirmation and without
+    rewriting code. A merge finishes a merge: review fixes on top of a merge
+    commit belong in their own change. If no PR exists, skip this step silently.
 
 ## Rules
 

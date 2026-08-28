@@ -58,11 +58,60 @@ bullets. No section-header boilerplate unless the repo's PR template requires it
   inventing one is unchanged.
 - `--draft` — pass `--draft` to `gh pr create`, opening the PR as a draft.
   Absent, open it ready for review, which is today's behavior.
+- `--no-polish` — skip step 0. Use it when the branch's code is not what this
+  pull request is about: the caller already reviewed it, the PR intentionally
+  opens over unfinished code, or the caller is finishing an operation of its own.
+  Absent, polish runs whenever `HEAD` does not carry its trailer.
 
 When no argument is given, behave interactively: surface the drafted title and
 description and let the user adjust before running `gh`.
 
 ## Steps
+
+0. **Polish the branch first.** Run the `polish` skill before anything else in
+   this mode, unless it already ran on the current code.
+
+   This applies when the branch's code is what is going under review: a
+   `gh pr create`, or a `gh pr edit` that follows new commits. Skip it for an
+   edit that only rewords an existing pull request's title or body. The user
+   asked for wording, and rewriting code behind that ask is a change nobody
+   requested.
+
+   Check the marker `polish` writes, on `HEAD` alone:
+
+   ```bash
+   git log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD
+   ```
+
+   Empty output means polish has not run on this commit. Anchor on `HEAD`, not
+   a range: a range matches a branch that polished and then committed more work,
+   which is the stale case this check exists to catch.
+
+   When polish has not run, invoke it immediately. Pass `<base>` so polish does
+   not re-derive one. Do not ask the user first,
+   and do not ask for a Notion card first. Polish rewrites code, so a card
+   resolved before it runs is resolved against code that is about to change.
+
+   If polish stops on a failing check, stop here too. Report what polish
+   reported and do not open the PR. A branch that fails its own check is not
+   ready for review.
+
+   Polish can add a commit. When it does, push the branch before step 3 runs
+   `gh`, so the remote tip matches `HEAD`. A caller that pushed before invoking
+   compose cannot do this itself, because it has no re-entry point between this
+   step and step 3.
+
+   Skip this step when `--no-polish` was passed or when `HEAD` already carries
+   the trailer. Polish's own step 1 decides whether there is anything to review,
+   so do not pre-empt that here.
+
+   Refuse this step when the current branch is the repository default branch
+   (`git symbolic-ref --short HEAD`): a pull request is not opened from the
+   default branch, and polish refuses to switch branches under a caller.
+
+   `<base>` here is `--base` when it was passed, otherwise the repository
+   default branch - the same binding step 1 states, repeated because this step
+   runs first.
 
 1. Inspect the branch: `git log --oneline <base>..HEAD` and `git diff <base>...HEAD`
    so the title and description reflect **all** commits, not just the latest.
