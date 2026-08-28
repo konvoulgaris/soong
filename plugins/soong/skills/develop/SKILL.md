@@ -234,8 +234,7 @@ For each unskipped task in stack order, in that one worktree:
 5. **Implement.** Invoke `superpowers:subagent-driven-development` on that plan.
    Its own two stages, spec compliance then code quality, are the quality gate.
    This skill adds no review of its own at this step and skips neither of those.
-   Loop step 7 does add one, because compose polishes the branch before it opens
-   the pull request.
+   Loop step 7 adds one more, by way of compose.
 
    That skill normally ends by invoking `finishing-a-development-branch`. Do not
    follow that transition. Steps 6 through 8 here are the finish for one task, and
@@ -265,17 +264,15 @@ For each unskipped task in stack order, in that one worktree:
      afterward.
    - `--draft` only if the user passed `--draft`.
 
-   Compose runs the `polish` skill first, which can add a commit on top of what
-   step 6 pushed. Compose pushes that commit itself before it runs `gh`, so this
-   step does not re-push. The next task branches off this branch's local tip, so
-   a polish commit is carried into the stack either way.
+   Compose leaves the remote tip matching `HEAD`, so this step does not re-push.
+   The next task branches off this branch's local tip, so any commit compose
+   added carries into the stack.
 
-   If polish stops on a failing check, stop the stack there. Record the task
-   `stopped` with `stoppedBecause` naming the failing check, and report it. A
-   polish failure needs the user, and `in-progress` would route the resume into
-   the interrupted-work path, which re-runs step 7, polishes again, and fails
-   again. Do not open the pull request, and do not start the next task on a
-   branch that fails its own check.
+   If compose reports a failing check, stop the stack there. Record the task
+   `stopped` with `stoppedBecause` naming the check, and report it. Not
+   `in-progress`: that routes the resume back into step 7, which fails the same
+   way. Do not open the pull request, and do not start the next task on a branch
+   that fails its own check.
 
 8. **Record it.** Mark the task `done` in the ledger with its branch and pull
    request url.

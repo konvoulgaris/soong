@@ -20,13 +20,19 @@ a user present.
 
 ## Steps
 
-1. **Check the working tree.** Resolve the base first, taking the first that
-   works, the same order `merge` uses:
+1. **Check the working tree.** When a caller passed a base, use it. `merge`,
+   `rebase`, and `develop` all resolve a base before they invoke anything, so
+   re-deriving one discards a value the caller already has and costs a `gh` round
+   trip. Absent one, resolve it:
 
    1. PR base: `gh pr view --json baseRefName -q .baseRefName` (if a PR exists).
    2. Upstream tracking branch, minus the remote prefix:
       `git rev-parse --abbrev-ref --symbolic-full-name @{u}`.
    3. The repository default branch.
+
+   `merge` and `rebase` fall back to `development` at tier 3 rather than the
+   default branch. Do not copy that: those skills run on repos where
+   `development` is the integration branch, and polish runs anywhere.
 
    Then check for work to review:
 
@@ -61,7 +67,14 @@ a user present.
    checks as scripts beside the code rather than in a root-level runner, so
    look there too before concluding there is none.
 
-   If the check fails, do not commit. Report the failure with the command
+   When a caller already resolved the check, use what it found rather than
+   repeating the discovery.
+
+   If the failure looks like stale or missing dependencies, run the install
+   command once before treating it as real - the same rule `merge` and `rebase`
+   carry. A pass that touched a manifest produces exactly this false positive.
+
+   If the check still fails, do not commit. Report the failure with the command
    output and stop. A failing check after an autofix means a pass broke
    something, and the user needs the broken state to look at.
 
@@ -81,25 +94,26 @@ a user present.
    polish is invoked by a caller and the branch is the default branch, stop and
    say so instead.
 
-   Then stage the files the two passes touched and commit:
+   Then stage the files the two passes touched, by path, and commit:
 
    ```bash
-   git commit -m "refactor: apply code review and simplification findings"
+   git add <path> [<path>...]
+   git commit -m "refactor: apply code review and simplification findings" \
+              -m "Polish-passes: review,simplify"
    ```
 
-   Stage by path. Never `git add -A`: the tree can hold unrelated edits, and a
-   caller such as `merge` may have just restored a stash, so a blanket stage
-   sweeps work neither pass reviewed into this commit.
+   The `Polish-passes` trailer is the marker `manage-pr` compose step 0 reads to
+   decide whether polish already ran. Keep it on every polish commit. The
+   subject is prose and may be reworded; the trailer is the contract.
+
+   Never `git add -A`, and never `git commit -a`: the tree can hold unrelated
+   edits, and a caller such as `merge` may have just restored a stash, so a
+   blanket stage sweeps work neither pass reviewed into this commit. List the
+   paths the two passes reported.
 
    Use `fix:` instead of `refactor:` when pass 1 fixed a real bug. Add a body
    only when the fixes are not obvious from the diff. Never add a generated-by
    footer or a Claude attribution tag.
-
-   **The subject after the type prefix is a contract.** `manage-pr` compose
-   step 0 greps for the literal text `apply code review and simplification
-   findings` to decide whether polish already ran. Reword it and compose
-   re-runs a full review on every pull request create or edit. Change both
-   files together or neither.
 
    Then capture the new commit for the report:
 
@@ -139,23 +153,16 @@ Rules for the report:
 
 ## Rules
 
-- Never commit over a failing check. A failing check after an autofix means a
-  pass broke something, and the user needs the broken state to look at.
-- Never claim verification that did not run. When the project declares no
-  check, say so.
-- Never `git add -A`. Stage the files the two passes touched, by path.
-- Never switch branches when a caller invoked polish.
-- Never reword the commit subject without changing compose step 0's grep in
-  the same change.
+The steps state their own guards. These three fail silently and across files,
+so check them before every commit:
+
+- Never `git add -A` or `git commit -a`. Stage by path.
+- Never omit the `Polish-passes` trailer. It is how a caller knows polish ran.
 - Never add a generated-by footer or a Claude attribution tag.
-- Never list a finding a pass reported but did not apply.
 
 ## Errors
 
 | Case | Response |
 | --- | --- |
-| Working tree clean, no commits ahead of base | Say there is nothing to review and stop. |
-| A pass reports no findings | Continue to the next pass. Note the empty result in the report. |
-| The verification check fails | Report the failing command and its output. Do not commit. Do not attempt a fix. |
 | A pass leaves a merge conflict marker or a broken file | Report the file and stop before the commit. |
 | On the default branch, invoked by another skill | Stop and say so. Do not switch branches under a caller. |

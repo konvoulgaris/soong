@@ -53,11 +53,8 @@ Track these as todos and do them in order.
     exists, a merge is a natural finishing step, so use the `manage-pr` skill to refresh
     the PR title and description — invoke it with `--non-interactive --no-polish` so it
     drafts and updates the PR without pausing for confirmation and without
-    rewriting code. A merge finishes a merge. Polishing here would put review
-    fixes on top of a merge commit, which belongs in its own change, and step 8
-    may have just popped a stash, so a polish commit would capture work that no
-    review covered. If no PR exists, skip this step
-    silently.
+    rewriting code. A merge finishes a merge: review fixes on top of a merge
+    commit belong in their own change. If no PR exists, skip this step silently.
 
 ## Rules
 

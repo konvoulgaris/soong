@@ -58,12 +58,10 @@ bullets. No section-header boilerplate unless the repo's PR template requires it
   inventing one is unchanged.
 - `--draft` — pass `--draft` to `gh pr create`, opening the PR as a draft.
   Absent, open it ready for review, which is today's behavior.
-- `--no-polish` — skip step 0. Use it when the caller already reviewed the
-  branch, when the PR intentionally opens over unfinished code, or when the
-  caller is finishing an operation of its own and a code rewrite would capture
-  work the caller did not review - `merge` passes it for that last reason,
-  because it pops a stash before refreshing the pull request. Absent, polish
-  runs whenever `HEAD` is not already a polish commit.
+- `--no-polish` — skip step 0. Use it when the branch's code is not what this
+  pull request is about: the caller already reviewed it, the PR intentionally
+  opens over unfinished code, or the caller is finishing an operation of its own.
+  Absent, polish runs whenever `HEAD` does not carry its trailer.
 
 When no argument is given, behave interactively: surface the drafted title and
 description and let the user adjust before running `gh`.
@@ -79,22 +77,18 @@ description and let the user adjust before running `gh`.
    asked for wording, and rewriting code behind that ask is a change nobody
    requested.
 
-   Check whether it ran, against `HEAD` alone:
+   Check the marker `polish` writes, on `HEAD` alone:
 
    ```bash
-   git log -1 --format='%s' HEAD | grep -i 'apply code review and simplification findings'
+   git log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD
    ```
 
-   Anchor the check on `HEAD`, not on a range. A range says only that a polish
-   commit exists somewhere, so a branch that polished and then committed more
-   work would match and skip the step - which is the stale case this check
-   exists to catch. Polish is already run only when `HEAD` itself is the polish
-   commit.
+   Empty output means polish has not run on this commit. Anchor on `HEAD`, not
+   a range: a range matches a branch that polished and then committed more work,
+   which is the stale case this check exists to catch.
 
-   That subject text is the contract `polish` step 5 writes. Change both files
-   together or neither.
-
-   When polish has not run, invoke it immediately. Do not ask the user first,
+   When polish has not run, invoke it immediately. Pass `<base>` so polish does
+   not re-derive one. Do not ask the user first,
    and do not ask for a Notion card first. Polish rewrites code, so a card
    resolved before it runs is resolved against code that is about to change.
 
@@ -107,15 +101,13 @@ description and let the user adjust before running `gh`.
    compose cannot do this itself, because it has no re-entry point between this
    step and step 3.
 
-   Skip this step when `--no-polish` was passed, when `HEAD` is already a
-   polish commit, or when the branch has nothing to review at all - no commits
-   ahead of `<base>` **and** a clean working tree. Uncommitted work with no
-   commits ahead is still work to review, so do not skip on the commit count
-   alone.
+   Skip this step when `--no-polish` was passed or when `HEAD` already carries
+   the trailer. Polish's own step 1 decides whether there is anything to review,
+   so do not pre-empt that here.
 
-   Refuse this step when `HEAD` is the repository default branch: polish must
-   not switch branches under a caller, and a pull request is not opened from
-   the default branch. Say so and stop.
+   Refuse this step when the current branch is the repository default branch
+   (`git symbolic-ref --short HEAD`): a pull request is not opened from the
+   default branch, and polish refuses to switch branches under a caller.
 
    `<base>` here is `--base` when it was passed, otherwise the repository
    default branch - the same binding step 1 states, repeated because this step
@@ -194,8 +186,6 @@ jq --arg p "$project" --arg b "$branch" --arg c "$card" --arg s "$sha" \
 
 ## Rules
 
-- Run `polish` before opening or editing a PR, unless `--no-polish` was passed
-  or `HEAD` is already a polish commit.
 - Never add a generated-by footer of any kind.
 - Never guess a Notion ticket id; resolve it via the Notion MCP or omit it.
 - The title is the contract the hook checks — make it valid before running `gh`.
