@@ -40,10 +40,15 @@ These apply in both modes.
 Compose mode has one more rule, stated here because it runs before the
 reference file matters:
 
-- **Polish before you compose.** When the branch is about to get a PR and the
-  `polish` skill has not run on `HEAD`, invoke `polish` immediately. Do not ask
-  the user, and do not resolve a Notion card first. `reference/pr/compose.md`
-  step 0 holds the check and the `--no-polish` escape.
+- **Polish before you compose.** When the branch's code is about to go under
+  review and `HEAD` is not already a polish commit, invoke `polish` immediately.
+  Do not ask the user, and do not resolve a Notion card first.
+  `reference/pr/compose.md` step 0 holds the check and the `--no-polish` escape.
+
+Feedback mode does not polish, by design: its code changes are reviewer-driven
+and the user approves each one. That leaves `HEAD` off the polish commit, so a
+later compose-mode edit would see step 0's check fail. Do not let it re-review
+reviewer-negotiated code - that is the wording-only case step 0 excludes.
 
 If the PR-guard hook denies a command, read its reason and fix the title or body.
 Do not bypass the hook.
