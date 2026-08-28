@@ -1,6 +1,6 @@
 ---
 name: polish
-description: Run a maximum-effort code review with autofix, then a simplification pass, then commit the result. Use when the user runs /polish, or asks to review and clean up the current changes in one shot, autofix the review findings, or "review and simplify and commit". Runs unattended - it applies fixes and commits without asking.
+description: Run a code review with autofix, then a simplification pass, then commit the result. Use when the user runs /polish, or asks to review and clean up the current changes in one shot, autofix the review findings, or "review and simplify and commit". Runs unattended - it applies fixes and commits without asking.
 ---
 
 # polish
@@ -43,11 +43,12 @@ a user present.
 2. **Pass 1: review and fix.** Invoke the `code-review` skill with:
 
    ```
-   max --fix
+   --fix
    ```
 
-   `max` is the effort level. `--fix` applies the findings to the working
-   tree. Record each finding the pass reports.
+   `--fix` applies the findings to the working tree. Do not pass an effort
+   level: absent one, `code-review` reuses the level the user last chose, which
+   is the level they want. Record each finding the pass reports.
 
 3. **Pass 2: simplify.** Invoke the `simplify` skill with no argument. It
    reviews the changed code for reuse, simplification, efficiency, and
@@ -112,7 +113,7 @@ The report is the whole user-facing output. One sentence per finding. No
 preamble, no restatement of the diff, no next-step suggestions.
 
 ```
-Reviewed 6 files at max effort.
+Reviewed 6 files.
 
 Fixed
 - Token expiry check used `<`, so a token expiring this second passed.
