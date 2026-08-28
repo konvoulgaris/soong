@@ -49,6 +49,15 @@ bullets. No section-header boilerplate unless the repo's PR template requires it
   (e.g. from an existing PR record or an unambiguous MCP match); otherwise omit it
   rather than prompting. Use this when another skill (e.g. `merge`) invokes
   `manage-pr` as an automated finishing step.
+- `--base <branch>` — pass `--base <branch>` to `gh pr create`, and use `<branch>`
+  as the base in step 1's `git log` and `git diff`. Absent, run `gh pr create` as
+  it does today and let `gh` choose the default branch.
+- `--notion-card <url-or-id>` — use this card in the PR record instead of
+  resolving one. Absent, resolve as it does today. This does not license
+  guessing: the caller supplies a card it already has, and the rule against
+  inventing one is unchanged.
+- `--draft` — pass `--draft` to `gh pr create`, opening the PR as a draft.
+  Absent, open it ready for review, which is today's behavior.
 
 When no argument is given, behave interactively: surface the drafted title and
 description and let the user adjust before running `gh`.
@@ -57,11 +66,17 @@ description and let the user adjust before running `gh`.
 
 1. Inspect the branch: `git log --oneline <base>..HEAD` and `git diff <base>...HEAD`
    so the title and description reflect **all** commits, not just the latest.
+   `<base>` is `--base` when it was passed, otherwise the repo's default branch.
+   Binding it matters as much as binding it in the `gh` call: for a stacked PR,
+   the base is the previous branch in the stack, and that diff is this PR's own
+   change. Left unbound, a stacked PR would be described from the whole stack's
+   diff.
 2. Draft a Conventional Commit title and a short prose description following the
    rules above. Add a Notion ticket suffix only if one genuinely applies. Unless
    `--non-interactive` was passed, show the draft to the user and let them adjust
    before continuing.
 3. Run `gh pr create` (or `gh pr edit`) passing the title and body via a HEREDOC.
+   Add `--base <branch>` and `--draft` when those arguments were passed.
 4. If the PR-guard hook denies the command, read its reason, fix the title or body,
    and retry — do not bypass the hook.
 5. Write the PR record (see below) so `sync-pr-to-notion` can later find the linked
@@ -98,8 +113,9 @@ is never committed and is queryable later with `jq`.
   `--show-toplevel`: inside a linked worktree `--show-toplevel` returns the worktree
   directory, which would key the record on the throwaway branch name instead of the repo.
 - **branch** — current branch (`git rev-parse --abbrev-ref HEAD`).
-- **notionCard** — the card resolved via the existing `manage-notion-page` flow; store
-  `null` if none was resolved. Never invent one.
+- **notionCard** — `--notion-card` when it was passed, otherwise the card resolved
+  via the existing `manage-notion-page` flow; store `null` if none was resolved.
+  Never invent one.
 - **lastCommit** — `git rev-parse HEAD`.
 
 Create the directory and merge into the file idempotently. Example:

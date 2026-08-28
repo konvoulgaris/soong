@@ -1,20 +1,20 @@
 ---
 name: architect
-description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then hand off a prompt to start implementation. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via architect-setup first.
+description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via architect-setup first.
 ---
 
 # architect
 
 Take a request, brainstorm it into a spec, get that spec reviewed by the
 `architect-cobrain` agent, address the review with the user, then write the result to
-Notion as a roadmap item plus one task per stacked PR. Ends with a handoff prompt.
+Notion as a roadmap item plus one task per stacked PR. Ends by printing the
+`/develop` command that implements it.
 
 This skill plans. It does not implement.
 
 ## Assumes
 
 - The `superpowers` plugin (`superpowers:brainstorming`).
-- The `handoff` skill.
 - The Notion MCP.
 
 ## Step 1: Check configuration
@@ -42,8 +42,8 @@ back-and-forth actually reaches the user.
 
 **Produce the spec only.** Brainstorming normally ends by invoking
 `superpowers:writing-plans`; do not follow that transition. Stop once the design doc is
-written and the user approves it. The implementation plan is the next session's job, per
-Step 6.
+written and the user approves it. The implementation plan belongs to `develop`, which
+Step 6 hands off to.
 
 A worktree-first hook fires on `superpowers:brainstorming`. This skill writes no code, so
 a worktree buys nothing here, and the spec doc plus the Notion pages are the only output.
@@ -159,17 +159,23 @@ Confirm the created pages back to the user with their URLs.
 
 ## Step 6: Hand off
 
-Invoke the `handoff` skill to write the handoff document, then give the user a single
-copy-pasteable prompt that starts implementation of the stacked PRs in a fresh session.
+Print one copy-pasteable line:
 
-The prompt names the roadmap item, the first task in the stack, the handoff doc path, and
-the skills the next session needs. It starts implementation at the **first** PR, not the
-whole stack at once.
+```
+/develop <roadmap-item-url>
+```
+
+That is the whole handoff. `develop` reads the roadmap item and its tasks from
+Notion, so it needs nothing else: no handoff document, and no prompt naming the
+first task or the skills to use.
+
+It starts the **whole stack**, not the first PR only. `develop` walks every task
+in order, and asks whatever the task cards left open before it writes code.
 
 ## Rules
 
 - Never implement. No code changes, in any step, including a step the user asks for
-  mid-flow. Implementation is the next session's job.
+  mid-flow. Implementation belongs to `develop`, which may run in this same session.
 - Notion writes are not reversible by this skill. Once Step 5 creates pages, undoing
   them is manual, so treat the Step 4 gate as the last checkpoint.
 - If Step 5 fails partway, say which pages exist before retrying. Re-running it creates
