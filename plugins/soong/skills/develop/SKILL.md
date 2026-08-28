@@ -263,6 +263,15 @@ For each unskipped task in stack order, in that one worktree:
      afterward.
    - `--draft` only if the user passed `--draft`.
 
+   Compose runs the `polish` skill first, which can add a commit. When it does,
+   push again before `gh pr create` runs, so the remote branch matches `HEAD`.
+   Step 6 pushed the branch before this review existed.
+
+   If polish stops on a failing check, stop the stack there. Leave the task
+   `in progress` in the ledger and report which check failed. Do not open the
+   pull request, and do not start the next task on a branch that fails its own
+   check.
+
 8. **Record it.** Mark the task `done` in the ledger with its branch and pull
    request url.
 

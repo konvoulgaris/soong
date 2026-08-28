@@ -58,11 +58,38 @@ bullets. No section-header boilerplate unless the repo's PR template requires it
   inventing one is unchanged.
 - `--draft` — pass `--draft` to `gh pr create`, opening the PR as a draft.
   Absent, open it ready for review, which is today's behavior.
+- `--no-polish` — skip step 0. Use it when the caller already reviewed the
+  branch, or when the PR intentionally opens over unfinished code. Absent,
+  polish runs whenever it has not already run on `HEAD`.
 
 When no argument is given, behave interactively: surface the drafted title and
 description and let the user adjust before running `gh`.
 
 ## Steps
+
+0. **Polish the branch first.** Run the `polish` skill before anything else in
+   this mode, unless it already ran on the current code.
+
+   Check whether it ran:
+
+   ```bash
+   git log --format='%H %s' <base>..HEAD | grep -i 'apply code review and simplification findings'
+   ```
+
+   Treat polish as already run when that grep matches **and** the matching
+   commit is `HEAD`. A polish commit with work committed on top of it is stale,
+   because the later commits were never reviewed.
+
+   When polish has not run, invoke it immediately. Do not ask the user first,
+   and do not ask for a Notion card first. Polish rewrites code, so a card
+   resolved before it runs is resolved against code that is about to change.
+
+   If polish stops on a failing check, stop here too. Report what polish
+   reported and do not open the PR. A branch that fails its own check is not
+   ready for review.
+
+   Skip this step when `--no-polish` was passed, or when the branch has no
+   commits ahead of `<base>`.
 
 1. Inspect the branch: `git log --oneline <base>..HEAD` and `git diff <base>...HEAD`
    so the title and description reflect **all** commits, not just the latest.
@@ -137,6 +164,8 @@ jq --arg p "$project" --arg b "$branch" --arg c "$card" --arg s "$sha" \
 
 ## Rules
 
+- Run `polish` before opening or editing a PR, unless `--no-polish` was passed
+  or the top commit is already a polish commit.
 - Never add a generated-by footer of any kind.
 - Never guess a Notion ticket id; resolve it via the Notion MCP or omit it.
 - The title is the contract the hook checks — make it valid before running `gh`.
