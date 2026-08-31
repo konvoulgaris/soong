@@ -44,6 +44,15 @@ check "set overwrites"  R2  "$(jq -r .roadmapDb    <<<"$rec")"
 check "eq-form exits 0" 0 "$(run set --roadmap-db=R3 --task-db=T3 --task-template=TPL3 demo)"
 check "eq-form stored"  R3 "$(bash "$script" get demo | jq -r .roadmapDb)"
 
+# a stored template survives a later set that omits the flag. This is the third
+# state template_seen exists for: "not passed" must leave the stored value alone,
+# where "passed empty" below clears it. The other two states were covered and this
+# one was not, which left the merge's most load-bearing branch unexercised.
+bash "$script" set --roadmap-db RK --task-db TK --task-template KEEP demo >/dev/null 2>&1
+bash "$script" set --roadmap-db RK2 demo >/dev/null 2>&1
+check "template survives omission" KEEP "$(bash "$script" get demo | jq -r .taskTemplate)"
+check "omitting template still updates the rest" RK2 "$(bash "$script" get demo | jq -r .roadmapDb)"
+
 # empty template string clears rather than storing ""
 bash "$script" set --roadmap-db R2 --task-db T2 --task-template= demo >/dev/null 2>&1
 check "empty template is null" null "$(bash "$script" get demo | jq -r .taskTemplate)"

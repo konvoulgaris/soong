@@ -49,6 +49,39 @@ has_scope() {
   printf '%s' "$1" | grep -qE '^[a-z]+\([^)]*\)!?:'
 }
 
+TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+
+# The Conventional Commits rules, in one place for both the PR-title branch and
+# the commit-subject branch. They were duplicated verbatim, and the commit right
+# before this one widened the scope pattern to allow comma-separated scopes -- in
+# one of the two copies is exactly how that goes wrong, since nothing would have
+# kept them in sync.
+#
+# Prints one reason per line and returns 1 when the subject is bad, prints nothing
+# and returns 0 when it is fine. The caller supplies the noun for the message, so
+# a PR title and a commit subject still read as themselves. The generated-by
+# footer rule is deliberately NOT here: the PR branches apply it and the commit
+# branch must not, because this project requires a co-authorship trailer on
+# commits.
+# The plural is passed in rather than derived from the singular: lowercasing
+# "PR title" to build "pr titles" mangles the acronym, and a two-word argument is
+# cheaper than a rule for which nouns survive tr.
+subject_reasons() { # subject_reasons <subject> <noun> <plural> <require_scope>
+  local subj="$1" noun="$2" plural="$3" rule="$4"
+
+  if printf '%s' "$subj" | grep -qiE "^($TYPES)\((\*|misc|placeholder|tbd|na|n/a)\)"; then
+    echo "Do not use a placeholder or wildcard scope like 'feat(*):' or 'feat(misc):'. When no meaningful area applies, omit the scope entirely and write a plain 'feat:'. Got: \"$subj\""
+  elif ! printf '%s' "$subj" | grep -qE "^($TYPES)(\([a-z0-9./-]+(,[a-z0-9./-]+)*\))?!?: .+"; then
+    echo "$noun must follow Conventional Commits with optional scope, e.g. 'feat(scope): summary'. Got: \"$subj\""
+  fi
+
+  if [ "$rule" = "true" ] && ! has_scope "$subj"; then
+    echo "This repo requires a scope on $plural. Write 'feat(scope): summary'. Got: \"$subj\""
+  elif [ "$rule" = "false" ] && has_scope "$subj"; then
+    echo "This repo does not use scopes on $plural. Write 'feat: summary'. Got: \"$subj\""
+  fi
+}
+
 # Marker class: list/rule markers, blockquote, em-dash, whitespace, robot emoji.
 # Applied symmetrically so markdown italics (*sig*) cannot slip past the anchor.
 M='[-*_~>—[:space:]🤖]*'
@@ -110,19 +143,13 @@ case "$cmd" in
     reasons=()
 
     if [ -n "$title" ]; then
-      if printf '%s' "$title" | grep -qiE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((\*|misc|placeholder|tbd|na|n/a)\)'; then
-        reasons+=("Do not use a placeholder or wildcard scope like 'feat(*):' or 'feat(misc):'. When no meaningful area applies, omit the scope entirely and write a plain 'feat:'. Got: \"$title\"")
-      elif ! printf '%s' "$title" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9./-]+(,[a-z0-9./-]+)*\))?!?: .+'; then
-        reasons+=("Title must follow Conventional Commits with optional scope, e.g. 'feat(scope): summary'. An optional Notion ticket id may be appended as a suffix. Got: \"$title\"")
-      fi
-
-      # Called once into a variable, not twice: one command, one config read.
-      require_scope=$(scope_rule)
-      if [ "$require_scope" = "true" ] && ! has_scope "$title"; then
-        reasons+=("This repo requires a scope on PR titles. Write 'feat(scope): summary'. Got: \"$title\"")
-      elif [ "$require_scope" = "false" ] && has_scope "$title"; then
-        reasons+=("This repo does not use scopes on PR titles. Write 'feat: summary'. Got: \"$title\"")
-      fi
+      # scope_rule is called once into a variable, not per check: one command,
+      # one config read.
+      while IFS= read -r r; do
+        [ -n "$r" ] && reasons+=("$r")
+      done <<EOF
+$(subject_reasons "$title" "PR title" "PR titles" "$(scope_rule)")
+EOF
     fi
 
     if printf '%s' "$cmd" | grep -qiE 'generated with|co-authored-by|🤖'; then
@@ -169,21 +196,15 @@ case "$cmd" in
         if [ -n "$subject" ]; then
           creasons=()
 
-          if printf '%s' "$subject" | grep -qiE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((\*|misc|placeholder|tbd|na|n/a)\)'; then
-            creasons+=("Do not use a placeholder or wildcard scope. Got: \"$subject\"")
-          elif ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9./-]+(,[a-z0-9./-]+)*\))?!?: .+'; then
-            creasons+=("Commit subject must follow Conventional Commits, e.g. 'feat(scope): summary'. Got: \"$subject\"")
-          fi
-
-          if [ "$require_scope" = "true" ] && ! has_scope "$subject"; then
-            creasons+=("This repo requires a scope on commit subjects. Write 'feat(scope): summary'. Got: \"$subject\"")
-          elif [ "$require_scope" = "false" ] && has_scope "$subject"; then
-            creasons+=("This repo does not use scopes on commit subjects. Write 'feat: summary'. Got: \"$subject\"")
-          fi
-
-          # No generated-by footer check here, unlike the PR branches. CLAUDE.md
-          # requires a Co-Authored-By trailer on commits, so applying the PR
-          # footer rule would deny what the project requires.
+          # Same rules as the PR title, from the same function. The footer check
+          # the PR branch runs is absent here on purpose: this project requires a
+          # co-authorship trailer on commits, so applying that rule would deny
+          # what the project itself mandates.
+          while IFS= read -r r; do
+            [ -n "$r" ] && creasons+=("$r")
+          done <<EOF
+$(subject_reasons "$subject" "Commit subject" "commit subjects" "$require_scope")
+EOF
 
           if [ ${#creasons[@]} -gt 0 ]; then
             deny "$(join_reasons "${creasons[@]}") Fix the commit subject and retry."

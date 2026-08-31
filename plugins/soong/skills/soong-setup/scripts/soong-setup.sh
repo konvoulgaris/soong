@@ -53,10 +53,16 @@ fi
 file="$dir/soong.json"
 legacy="$dir/architect.json"
 
-# Capability -> required keys. Adding a capability is adding a row here; that is
-# what replaces a stored setup version number. What is missing is computed from
-# which required keys are absent, so a new capability shows up as unsatisfied for
-# every repo that has not answered its questions, with nothing to migrate.
+# Capability -> required keys. This table is what replaces a stored setup version
+# number: what is missing is computed from which required keys are absent, so a
+# new capability shows up as unsatisfied for every repo that has not answered its
+# questions, with nothing to migrate.
+#
+# One row is the whole cost on the read side -- check and the sweep pick it up
+# with no other edit. Writing is not generic in the same way: set still needs a
+# local, two flag-parsing arms, and a jq clause per key, because --require-scope
+# coerces to a boolean where the others stay strings. Worth knowing before
+# claiming a new capability is a one-line change.
 #
 # Optional keys are deliberately absent from this table. taskTemplate is optional
 # for notion, so it appears nowhere and never blocks a capability.
@@ -101,21 +107,17 @@ migrate_legacy() {
   trap - EXIT
 }
 
-# Reads prefer soong.json and fall back to the pre-rename name. After migration
-# the fallback is vestigial, because soong.json exists by then. It is kept as the
-# error path for the one case migration declines: a corrupt architect.json, which
-# read_file still surfaces so get reports the corrupt file by name instead of a
-# bare "no config" exit 3. The fallback stays read-only and one directional:
-# nothing writes back to architect.json, and the two files are never merged,
-# because a merge needs a precedence rule the user cannot see.
+# The config to read, or exit 1 when there is none.
+#
+# There is no legacy fallback here, because there is nothing left for one to do.
+# Every caller runs migrate_legacy first, and that leaves only three states: the
+# copy just succeeded so soong.json exists, soong.json already existed, or
+# neither file is there. A corrupt architect.json never reaches this point at all
+# -- migrate_legacy reports it by name and dies, and die is exit, so the whole
+# process stops rather than falling through to a fallback.
 read_file() {
-  if [ -f "$file" ]; then
-    echo "$file"
-  elif [ -f "$legacy" ]; then
-    echo "$legacy"
-  else
-    return 1
-  fi
+  [ -f "$file" ] || return 1
+  echo "$file"
 }
 
 # One repo is one mapping, so key on the main checkout even from a linked
