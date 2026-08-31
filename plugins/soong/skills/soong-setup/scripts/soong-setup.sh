@@ -2,6 +2,7 @@
 # Read or write soong's per-repo configuration.
 #
 #   soong-setup.sh get [project]
+#   soong-setup.sh check [capability] [--project NAME]
 #   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
 #                     [--require-scope true|false] [project]
 #
@@ -19,7 +20,8 @@
 #   0  ok
 #   1  error (no jq, unreadable or corrupt config, failed write)
 #   2  usage error, or not inside a git repository
-#   3  get only: this project has no mapping yet
+#   3  not configured: get has no mapping for this project, or check
+#      found a capability whose required keys are absent
 set -uo pipefail
 
 die() { echo "soong-setup: $1" >&2; exit "${2:-1}"; }
@@ -29,11 +31,15 @@ usage() {
 Read or write soong's per-repo configuration.
 
   soong-setup.sh get [project]
+  soong-setup.sh check [capability] [--project NAME]
   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
                     [--require-scope true|false] [project]
 
 Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 get exits 3 when the project has no mapping, so a caller can branch on it.
+check exits 3 when a capability's required keys are absent, 0 when they are all
+present, and 2 for an unknown capability. With no capability it sweeps all of
+them. Capabilities: notion, commits.
 set merges: it writes only the keys you pass, and needs at least one flag.
 EOF
 }
@@ -46,6 +52,22 @@ else
 fi
 file="$dir/soong.json"
 legacy="$dir/architect.json"
+
+# Capability -> required keys. Adding a capability is adding a row here; that is
+# what replaces a stored setup version number. What is missing is computed from
+# which required keys are absent, so a new capability shows up as unsatisfied for
+# every repo that has not answered its questions, with nothing to migrate.
+#
+# Optional keys are deliberately absent from this table. taskTemplate is optional
+# for notion, so it appears nowhere and never blocks a capability.
+capabilities="notion commits"
+required_keys() {
+  case "$1" in
+    notion)  echo "roadmapDb taskDb" ;;
+    commits) echo "requireScope" ;;
+    *)       return 1 ;;
+  esac
+}
 
 # Copy the pre-rename config forward, once, before anything reads or writes it.
 # Reads preferred soong.json and writes always created it, so the first set on an
@@ -212,6 +234,92 @@ case "$cmd" in
     jq --arg p "$project" '.[$p]' "$file"
     ;;
 
+  check)
+    command -v jq >/dev/null || die "jq is required"
+
+    # A bare first argument is a capability, never a project. So `check comits`
+    # (a typo) is exit 2, not a sweep of a project named "comits" -- a typo in a
+    # skill's check call must never read as "the user needs to run setup", which
+    # is what exit 3 means to every caller.
+    #
+    # That costs the one-argument sweep form: `check <project>` is spelled
+    # `check --project <name>`. Only the test suite passes a project explicitly;
+    # every real caller relies on the default, so the flag costs nothing at the
+    # call sites that exist and removes a whole class of silent misread.
+    cap=""; project_arg=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --project)
+          shift
+          [ $# -gt 0 ] || die "--project needs a value" 2
+          project_arg="$1"
+          ;;
+        --project=*) project_arg="${1#--project=}" ;;
+        -*) die "unknown flag: $1" 2 ;;
+        *)
+          # Validate before the duplicate check, so `check notion badcap` names
+          # badcap rather than complaining about the count.
+          required_keys "$1" >/dev/null 2>&1 \
+            || die "unknown capability '$1' (want: $capabilities)" 2
+          [ -z "$cap" ] || die "check takes at most one capability" 2
+          cap="$1"
+          ;;
+      esac
+      shift
+    done
+
+    # Migrate before resolving the project, like every other config-touching
+    # command: a repo configured before the rename must read as configured here,
+    # or every skill's check sends the user back into a setup they already did.
+    migrate_legacy
+    project="$(resolve_project "$project_arg")" || exit $?
+
+    src="$(read_file)" || src=""
+    if [ -n "$src" ]; then
+      jq -e . "$src" >/dev/null 2>&1 || die "$src is not valid JSON"
+      jq -e 'type == "object"' "$src" >/dev/null 2>&1 || die "$src is not a JSON object"
+      # A scalar where a record belongs is a hand-corrupted config, and set
+      # refuses to merge into it. Report that as an error, not as exit 3: a 3
+      # would send the caller into a setup that then refuses to write. Checked
+      # once here rather than inferred from a failing has() below, where a jq
+      # error and a genuinely absent key are indistinguishable.
+      jq -e --arg p "$project" '(.[$p] // {}) | type == "object"' "$src" >/dev/null 2>&1 \
+        || die "$src has a non-object record for '$project'; fix or remove it"
+    fi
+
+    # Presence is has(), never truthiness: requireScope false is a configured
+    # commits capability, and a jq -e test would read it as missing.
+    missing_for() { # missing_for <capability> -> prints missing key names
+      local c="$1" k out=""
+      for k in $(required_keys "$c"); do
+        if [ -z "$src" ] \
+          || ! jq -e --arg p "$project" --arg k "$k" \
+                 '(.[$p] // {}) | has($k)' "$src" >/dev/null 2>&1; then
+          out="$out $k"
+        fi
+      done
+      printf '%s' "${out# }"
+    }
+
+    if [ -n "$cap" ]; then
+      gaps="$(missing_for "$cap")"
+      [ -z "$gaps" ] || die "$cap is missing: $gaps" 3
+      exit 0
+    fi
+
+    rc=0
+    for c in $capabilities; do
+      gaps="$(missing_for "$c")"
+      if [ -z "$gaps" ]; then
+        echo "$c: configured"
+      else
+        echo "$c: missing $gaps"
+        rc=3
+      fi
+    done
+    exit "$rc"
+    ;;
+
   -h|--help|help)
     usage
     ;;
@@ -222,6 +330,6 @@ case "$cmd" in
     ;;
 
   *)
-    die "unknown command '$cmd' (want: get, set)" 2
+    die "unknown command '$cmd' (want: get, check, set)" 2
     ;;
 esac

@@ -288,6 +288,73 @@ check "scalar record preserved" '{"scalar":"oops"}' "$(cat "$config")"
 check "failed merge left no temp file" 0 \
   "$(find "$(dirname "$config")" -name '.soong.*' | wc -l | tr -d ' ')"
 
+# --- check <capability> ------------------------------------------------------
+# A project is passed with --project, never as a bare argument: a bare argument is
+# always a capability, so a typo cannot be mistaken for a project name.
+rm -f "$config"
+check "check on an unconfigured repo exits 3" 3 "$(run check notion --project nothing)"
+
+bash "$script" set --roadmap-db R --task-db T chk >/dev/null 2>&1
+check "notion satisfied"        0 "$(run check notion --project chk)"
+check "commits not satisfied"   3 "$(run check commits --project chk)"
+
+# a stored false satisfies commits: presence is has(), not truthiness
+bash "$script" set --require-scope false chk >/dev/null 2>&1
+check "commits satisfied by false" 0 "$(run check commits --project chk)"
+
+# a partial notion config is not satisfied, and says which key is missing
+bash "$script" set --task-db T2 partial >/dev/null 2>&1
+check "partial notion exits 3" 3 "$(run check notion --project partial)"
+missing="$(bash "$script" check notion --project partial 2>&1 >/dev/null)"
+case "$missing" in
+  *roadmapDb*) check "names the missing key" 0 0 ;;
+  *) check "names the missing key" "roadmapDb in stderr" "$missing" ;;
+esac
+
+# taskTemplate is optional, so its absence does not fail the capability
+check "template not required" 0 "$(run check notion --project chk)"
+
+# a typo is a caller bug, never "the user needs to run setup"
+check "unknown capability exits 2" 2 "$(run check notyacapability --project chk)"
+check "bare typo is not a project"  2 "$(run check comits)"
+check "two capabilities exit 2"     2 "$(run check notion commits)"
+check "--project with no value"     2 "$(run check notion --project)"
+
+# --- check with no capability sweeps everything ------------------------------
+check "sweep exits 3 when any capability is missing" 3 "$(run check --project partial)"
+bash "$script" set --require-scope true --roadmap-db R3 partial >/dev/null 2>&1
+check "sweep exits 0 when all are satisfied" 0 "$(run check --project partial)"
+sweep="$(bash "$script" check --project chk 2>&1)"
+case "$sweep" in
+  *notion*commits*|*commits*notion*) check "sweep lists both capabilities" 0 0 ;;
+  *) check "sweep lists both capabilities" "notion and commits" "$sweep" ;;
+esac
+
+# a corrupt config is an error, never "unconfigured"
+seed 'not json at all'
+check "check on corrupt config exits 1" 1 "$(run check notion --project chk)"
+check "sweep on corrupt config exits 1" 1 "$(run check --project chk)"
+rm -f "$config"
+
+# a scalar under a project key is a hand-corrupted config, not "unconfigured":
+# set refuses to merge into it (exit 1), so a 3 here would send the caller into a
+# setup that then refuses to write. Same deadlock the corrupt-file checks guard.
+seed '{"scalarchk":"oops"}'
+check "check on a scalar record exits 1" 1 "$(run check notion --project scalarchk)"
+check "sweep on a scalar record exits 1" 1 "$(run check --project scalarchk)"
+check "scalar record still satisfies nothing for others" 3 "$(run check notion --project elsewhere)"
+rm -f "$config"
+
+# check migrates the legacy config forward like every other config-touching
+# command: without it, a repo configured before the rename reads as unconfigured
+# and every skill's check sends the user back into setup.
+rm -f "$config" "$legacy"
+seed_legacy '{"legacycheck":{"roadmapDb":"LR","taskDb":"LT"}}'
+check "check satisfies a legacy config" 0 "$(run check notion --project legacycheck)"
+check "check migrated soong.json"       0 "$([ -f "$config" ]; echo $?)"
+check "migrated content matches"        LR "$(jq -r '.legacycheck.roadmapDb' "$config")"
+rm -f "$config" "$legacy"
+
 echo
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1
