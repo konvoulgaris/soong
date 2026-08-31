@@ -25,3 +25,6 @@ them:
 - **superpowers** — `/architect` runs `superpowers:brainstorming` to turn a request
   into a spec.
 - **Notion MCP** — every skill that reads or writes a Notion card.
+- **soong-setup** — run `/soong-setup` once per repo. `/architect` and `/develop`
+  need the Notion databases it records, and the `conventional-commit-guard` hook reads the commit
+  scope rule it records.

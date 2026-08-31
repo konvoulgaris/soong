@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via architect-setup first.
+description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Checks first whether the roadmap already holds overlapping work, and stops without writing anything if the user decides the request duplicates it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via soong-setup first.
 ---
 
 # architect
@@ -15,25 +15,70 @@ This skill plans. It does not implement.
 ## Assumes
 
 - The `superpowers` plugin (`superpowers:brainstorming`).
+- The `conflict-scout` agent, which queries Notion for overlapping work.
+- The `architect-cobrain` agent, which reviews the spec at Step 3.
+- The `adversarial-council` skill, which filters cobrain's findings at Step 3.5.
+- The `soong-setup` skill, which Step 1 sends the user to when the repo is not
+  configured for Notion.
 - The Notion MCP.
 
 ## Step 1: Check configuration
 
+Two calls. The first asks whether this repo is configured for Notion; the second
+reads the ids.
+
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/architect-setup/scripts/architect-setup.sh" get
+bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check notion
+bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
 ```
 
-- **Exit 0** — read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON. Continue.
-- **Exit 3** — this repo is not configured. Say so, then invoke the `architect-setup`
-  skill. When setup finishes, run `get` again: exit 0 means continue, anything else
-  means **stop here**. Do not brainstorm and do not touch Notion on a non-zero code.
-- **Exit 1** — an error, not an unconfigured repo: no `jq`, or a corrupt config file.
-  Report the message and stop. Never re-run setup to "fix" a corrupt file; setup
-  refuses to overwrite one.
+**Step A, `check notion`:**
+
+- **Exit 0** — go to Step B.
+- **Exit 3** — this repo is not configured for Notion. Say so, then invoke the
+  `soong-setup` skill with the `notion` capability. When setup finishes, run
+  `check notion` again: exit 0 means go to Step B, anything else means **stop
+  here**. Do not brainstorm and do not touch Notion on a non-zero code.
+- **Exit 1** — an error, not an unconfigured repo: no `jq`, or a corrupt config
+  file. Report the message and stop. Never re-run setup to "fix" a corrupt file;
+  setup refuses to overwrite one.
 - **Exit 2** — not inside a git repository, or a usage error. Report it and stop.
+
+**Step B, `get`:** read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON.
+
+A non-zero exit here is a bug, not a user problem, because Step A just confirmed
+the keys exist. Report the exit code and stop. Do not run setup again: the state
+that produced this is not one setup can resolve.
+
+`check notion` exit 3 does not mean the repo has never been set up. It means the
+Notion keys are missing, which is also true of a repo configured for commits
+alone. Say "not configured for Notion", not "never set up".
 
 Confirm the Notion MCP is reachable now, in this step, rather than discovering at
 Step 5 that a finished spec has nowhere to go.
+
+## Step 1.5: Check for work that already exists
+
+Before brainstorming. Nothing has been spent yet, so this is the cheapest place
+in this skill to abandon.
+
+Dispatch `conflict-scout` (Agent tool, `subagent_type: conflict-scout`) with the
+user's request, the `roadmapDb` and `taskDb` ids from Step 1, and the fact that
+this is run 1.
+
+**Nothing found:** say so in one line and go to Step 2.
+
+**Candidates found:** show them and ask one question with three answers. If the
+scout said its sweep was too broad, say so when you present them, and ask the
+same question anyway. A too-broad sweep is weak evidence, not a fourth answer.
+
+| Answer | What you do |
+| ------ | ----------- |
+| **Abandon** | Stop. Print the conflicting card URLs so the user can go look at them. Write nothing, brainstorm nothing. |
+| **Build on top** | Go to Step 2 carrying the conflicting cards in as context. The spec then states what it extends and what it must not duplicate, and Step 5 names those cards in the new roadmap item's body. |
+| **Proceed anyway** | Go to Step 2 as if nothing was found. Record the dismissed card ids for Step 2.5. |
+
+Ask once, with all three options visible. Do not ask three yes-or-no questions.
 
 ## Step 2: Brainstorm the spec, on the main thread
 
@@ -54,6 +99,46 @@ Frame the design as a **stack of PRs** from the start:
 - Each PR is small, self-contained, and reviewable on its own.
 - Each PR leaves the branch working; no PR depends on a later one to make sense.
 - The stack has an order, and each step names what it depends on.
+
+## Step 2.5: Re-check for existing work, now that the spec exists
+
+After the user approves the design, before the cobrain dispatch.
+
+Dispatch `conflict-scout` again, with the spec, the pull request stack, the files
+each pull request touches, the two database ids, the fact that this is run 2, and
+the card ids the user dismissed at Step 1.5. This is far better input than Step
+1.5 had, so it catches overlap a one-line request could not expose.
+
+The same three answers, with two differences:
+
+- **Cards dismissed with "proceed anyway" at Step 1.5 are not re-asked.** Asking
+  twice about the same card trains the user to dismiss by reflex. That is why the
+  dismissed ids are passed in.
+- **"Build on top" here revises the spec rather than restarting the brainstorm.**
+  Go back into the design with the conflicting cards as context, then run this
+  step again on the revised spec.
+
+Abandoning here still costs a brainstorm. It saves the cobrain dispatch, the
+two-judge council, the Step 4 walk, and the irreversible Notion writes.
+
+### These conflicts are not Step 4 findings
+
+Do not fold them into the Step 4 queue. "Abandon this spec" is a decision, not a
+fix to apply to a spec, and the Step 3.5 council can drop a finding. A dropped
+"this duplicates an in-flight roadmap item" is exactly the swallowed blocker that
+Step 4's notices exist to prevent.
+
+### The dismissed set
+
+The dismissed card ids live in this conversation, not in a file. `architect` has
+no ledger, unlike `develop`, which needs one because it resumes across sessions.
+
+The cost is real and worth stating: if this conversation is compacted between
+Step 1.5 and Step 2.5, the set is lost and this step re-asks about a card the
+user already dismissed. That is one redundant question in a rare case, against a
+persistent store in every case.
+
+Record page ids, not titles. Titles are editable and can collide.
 
 ## Step 3: Review with architect-cobrain
 
@@ -146,6 +231,8 @@ instructions on articles and sentence form.
 - A **mermaid diagram** when it earns its place, i.e. when it shows a new flow or a
   changed architecture more clearly than prose. Skip it for a change a sentence covers.
 - The PR stack as an ordered list, each entry naming its scope and its dependency.
+- When the user chose "build on top" at Step 1.5 or Step 2.5, the cards this work
+  extends, by title and URL, and what this item does not duplicate.
 
 **One task per PR** (in `taskDb`), created from `taskTemplate` when set, otherwise the
 database's default template:

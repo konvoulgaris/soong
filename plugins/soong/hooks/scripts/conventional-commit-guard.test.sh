@@ -1,9 +1,35 @@
 #!/usr/bin/env bash
-# Tests for pr-guard.sh. Run by hand: bash pr-guard.test.sh
+# Tests for conventional-commit-guard.sh. Run by hand: bash conventional-commit-guard.test.sh
 # Feeds hook JSON on stdin and asserts on stdout. Exits non-zero on any failure.
 set -u
 
-HOOK="$(cd "$(dirname "$0")" && pwd)/pr-guard.sh"
+HOOK="$(cd "$(dirname "$0")" && pwd)/conventional-commit-guard.sh"
+
+# The guard reads the commit scope rule from soong.json. Without a pinned
+# XDG_DATA_HOME the suite would read the developer's own config and the scope
+# cases would pass or fail depending on whose machine ran them.
+XDG_DATA_HOME="$(mktemp -d)" || { echo "cannot create a temp dir" >&2; exit 1; }
+export XDG_DATA_HOME
+trap 'rm -rf "$XDG_DATA_HOME"' EXIT
+
+# The hook resolves its project key from git, so the suite needs a repo to sit
+# in that is not the checkout it was launched from.
+fixture="$XDG_DATA_HOME/repo"
+git init -q "$fixture" 2>/dev/null
+cd "$fixture" || { echo "cannot enter the fixture repo" >&2; exit 1; }
+project="repo"
+
+setup="$(cd "$(dirname "$HOOK")/../../skills/soong-setup/scripts" && pwd)/soong-setup.sh"
+
+# Put the repo in one of the three scope states. No argument clears it.
+scope_state() {
+  if [ -n "${1:-}" ]; then
+    bash "$setup" set --require-scope "$1" "$project" >/dev/null 2>&1
+  else
+    rm -f "$XDG_DATA_HOME/soong/soong.json"
+  fi
+}
+
 pass=0
 fail=0
 
@@ -172,6 +198,7 @@ for c in \
   'gh pr create --title "nope" --body "y"' \
   "gh pr comment 5 -b 'Fixed it.'" \
   "gh pr comment 5 -b 'Addressed by Claude Code'" \
+  'git commit -m "feat(api): thing"' \
   'git status'
 do
   out=$(run "$c")
@@ -182,6 +209,119 @@ do
     printf 'FAIL  invalid JSON for: %s\n' "$c"
   fi
 done
+
+# The hook finds soong-setup.sh relative to its own path. A directory move must
+# fail here rather than silently disabling the scope rule.
+if [ -f "$setup" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  soong-setup.sh not found at %s\n' "$setup"
+fi
+
+# --- scope rule on PR titles ------------------------------------------------
+scope_state true
+check deny   'scoped required, none given'   'gh pr create --title "feat: thing"'
+check advise 'scoped required, one given'    'gh pr create --title "feat(api): thing"'
+check deny   'scoped required, placeholder'  'gh pr create --title "feat(*): thing"'
+
+scope_state false
+check deny   'scope forbidden, one given'    'gh pr create --title "feat(api): thing"'
+check advise 'scope forbidden, none given'   'gh pr create --title "feat: thing"'
+
+scope_state
+check advise 'unset allows a scope'          'gh pr create --title "feat(api): thing"'
+check advise 'unset allows no scope'         'gh pr create --title "feat: thing"'
+check deny   'unset still denies placeholder' 'gh pr create --title "feat(misc): thing"'
+check deny   'unset still denies bad shape'  'gh pr create --title "thing"'
+
+# a corrupt config must not enforce a scope rule, and must not break the guard
+mkdir -p "$XDG_DATA_HOME/soong"
+printf 'not json' > "$XDG_DATA_HOME/soong/soong.json"
+check advise 'corrupt config falls open'     'gh pr create --title "feat: thing"'
+check deny   'corrupt config still checks shape' 'gh pr create --title "thing"'
+scope_state
+
+# --- commit subjects --------------------------------------------------------
+# The whole branch is gated on the commits capability. An unconfigured repo hears
+# nothing at all, including on shape, because commits are far higher-frequency
+# than PR titles and a new universal denial on them is the more damaging one.
+scope_state
+check silent 'unset ignores a bad commit'  'git commit -m "wip"'
+check silent 'unset ignores a good commit' 'git commit -m "feat(api): thing"'
+
+scope_state true
+check deny   'commit needs a scope'        'git commit -m "feat: thing"'
+check advise 'commit has a scope'          'git commit -m "feat(api): thing"'
+check deny   'commit shape is checked'     'git commit -m "wip"'
+
+scope_state false
+check deny   'commit must not be scoped'   'git commit -m "feat(api): thing"'
+check advise 'commit is unscoped'          'git commit -m "feat: thing"'
+
+# a Co-Authored-By trailer is required by CLAUDE.md, so it must stay legal
+scope_state true
+check advise 'trailer is allowed' 'git commit -m "feat(api): thing" -m "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"'
+
+# the first -m is the subject; later ones are body paragraphs
+check advise 'later -m is not the subject' 'git commit -m "feat(api): thing" -m "wip notes"'
+
+# messages the hook cannot read: advise, never deny
+check advise 'no -m at all'   'git commit'
+check advise 'message in a file' 'git commit -F /tmp/msg'
+check advise 'amend without -m'  'git commit --amend --no-edit'
+
+# git generates these subjects and a later rebase absorbs them
+check advise 'fixup is exempt'  'git commit --fixup=HEAD'
+check advise 'squash is exempt' 'git commit --squash=HEAD'
+
+# the PR branch is ordered first, so a compound command stops there
+check deny 'compound stops at the PR title' 'git commit -m "feat(api): ok" && gh pr create --title "bad"'
+scope_state
+
+# --- the scope-rule read is lazy -------------------------------------------
+# This hook runs on every Bash call, so reading the config unconditionally costs
+# every unrelated command three processes. Guard that by counting the reads
+# instead of timing them: copy the hook into a fake plugin tree whose
+# $0-relative soong-setup.sh is a wrapper that appends a line per invocation,
+# then assert the log is empty for a command no branch cares about and non-empty
+# for a PR title. A timing assertion would be flaky; a call count is exact.
+lazy_root="$XDG_DATA_HOME/lazy"
+mkdir -p "$lazy_root/hooks/scripts" "$lazy_root/skills/soong-setup/scripts"
+cp "$HOOK" "$lazy_root/hooks/scripts/conventional-commit-guard.sh"
+calls="$lazy_root/calls.log"
+cat > "$lazy_root/skills/soong-setup/scripts/soong-setup.sh" <<EOF
+#!/usr/bin/env bash
+printf 'call\n' >> "$calls"
+exec bash "$setup" "\$@"
+EOF
+
+# Count the reads one command makes, via the recording copy of the hook.
+read_count() {
+  : > "$calls"
+  jq -Rs '{tool_input:{command:.}}' <<<"$1" \
+    | bash "$lazy_root/hooks/scripts/conventional-commit-guard.sh" >/dev/null 2>&1
+  # No log file at all is zero reads, not an error.
+  [ -f "$calls" ] && wc -l < "$calls" | tr -d ' ' || printf '0'
+}
+
+# A command reaching no branch that needs the rule must not read the config.
+got=$(read_count 'ls')
+if [ "$got" = "0" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  lazy: ls read the scope config %s times, want 0\n' "$got"
+fi
+
+# The PR-title branch must read it, and memoization means exactly once.
+got=$(read_count 'gh pr create --title "feat(api): thing"')
+if [ "$got" = "1" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  lazy: gh pr create read the scope config %s times, want 1\n' "$got"
+fi
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
