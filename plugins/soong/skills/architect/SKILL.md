@@ -52,6 +52,29 @@ alone. Say "not configured for Notion", not "never set up".
 Confirm the Notion MCP is reachable now, in this step, rather than discovering at
 Step 5 that a finished spec has nowhere to go.
 
+## Step 1.5: Check for work that already exists
+
+Before brainstorming. Nothing has been spent yet, so this is the cheapest place
+in this skill to abandon.
+
+Dispatch `conflict-scout` (Agent tool, `subagent_type: conflict-scout`) with the
+user's request, the `roadmapDb` and `taskDb` ids from Step 1, and the fact that
+this is run 1.
+
+**Nothing found:** say so in one line and go to Step 2.
+
+**Candidates found:** show them and ask one question with three answers. If the
+scout said its sweep was too broad, say so when you present them, and ask the
+same question anyway. A too-broad sweep is weak evidence, not a fourth answer.
+
+| Answer | What you do |
+| ------ | ----------- |
+| **Abandon** | Stop. Print the conflicting card URLs so the user can go look at them. Write nothing, brainstorm nothing. |
+| **Build on top** | Go to Step 2 carrying the conflicting cards in as context. The spec then states what it extends and what it must not duplicate, and Step 5 names those cards in the new roadmap item's body. |
+| **Proceed anyway** | Go to Step 2 as if nothing was found. Record the dismissed card ids for Step 2.5. |
+
+Ask once, with all three options visible. Do not ask three yes-or-no questions.
+
 ## Step 2: Brainstorm the spec, on the main thread
 
 Invoke `superpowers:brainstorming` and run it here, in the main thread, so the
