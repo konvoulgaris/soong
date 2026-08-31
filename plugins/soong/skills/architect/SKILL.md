@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via architect-setup first.
+description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via soong-setup first.
 ---
 
 # architect
@@ -19,18 +19,35 @@ This skill plans. It does not implement.
 
 ## Step 1: Check configuration
 
+Two calls. The first asks whether this repo is configured for Notion; the second
+reads the ids.
+
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/architect-setup/scripts/architect-setup.sh" get
+bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check notion
+bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
 ```
 
-- **Exit 0** — read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON. Continue.
-- **Exit 3** — this repo is not configured. Say so, then invoke the `architect-setup`
-  skill. When setup finishes, run `get` again: exit 0 means continue, anything else
-  means **stop here**. Do not brainstorm and do not touch Notion on a non-zero code.
-- **Exit 1** — an error, not an unconfigured repo: no `jq`, or a corrupt config file.
-  Report the message and stop. Never re-run setup to "fix" a corrupt file; setup
-  refuses to overwrite one.
+**Step A, `check notion`:**
+
+- **Exit 0** — go to Step B.
+- **Exit 3** — this repo is not configured for Notion. Say so, then invoke the
+  `soong-setup` skill with the `notion` capability. When setup finishes, run
+  `check notion` again: exit 0 means go to Step B, anything else means **stop
+  here**. Do not brainstorm and do not touch Notion on a non-zero code.
+- **Exit 1** — an error, not an unconfigured repo: no `jq`, or a corrupt config
+  file. Report the message and stop. Never re-run setup to "fix" a corrupt file;
+  setup refuses to overwrite one.
 - **Exit 2** — not inside a git repository, or a usage error. Report it and stop.
+
+**Step B, `get`:** read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON.
+
+A non-zero exit here is a bug, not a user problem, because Step A just confirmed
+the keys exist. Report the exit code and stop. Do not run setup again: the state
+that produced this is not one setup can resolve.
+
+`check notion` exit 3 does not mean the repo has never been set up. It means the
+Notion keys are missing, which is also true of a repo configured for commits
+alone. Say "not configured for Notion", not "never set up".
 
 Confirm the Notion MCP is reachable now, in this step, rather than discovering at
 Step 5 that a finished spec has nowhere to go.
