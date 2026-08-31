@@ -5,7 +5,8 @@ set -uo pipefail
 script="$(cd "$(dirname "$0")" && pwd)/soong-setup.sh"
 XDG_DATA_HOME="$(mktemp -d)" || { echo "cannot create a temp dir" >&2; exit 1; }
 export XDG_DATA_HOME
-config="$XDG_DATA_HOME/soong/architect.json"
+config="$XDG_DATA_HOME/soong/soong.json"
+legacy="$XDG_DATA_HOME/soong/architect.json"
 trap 'rm -rf "$XDG_DATA_HOME"' EXIT
 
 # A repo to key off, so the tests never depend on the checkout they run from.
@@ -19,6 +20,7 @@ check() { # check <label> <expected> <actual>
 }
 run() { bash "$script" "$@" >/dev/null 2>&1; echo $?; }   # exit code only
 seed() { mkdir -p "$(dirname "$config")"; printf '%s' "$1" > "$config"; }
+seed_legacy() { mkdir -p "$(dirname "$legacy")"; printf '%s' "$1" > "$legacy"; }
 
 # get on an empty config exits 3, so the skill can branch to setup
 out="$(bash "$script" get demo 2>/dev/null)"
@@ -129,6 +131,26 @@ cd /
 check "set outside a repo exits 2" 2 "$(run set --roadmap-db R --task-db T)"
 check "get outside a repo exits 2" 2 "$(run get)"
 check "no empty-string key written" 1 "$(jq -e 'has("")' "$config" >/dev/null 2>&1; echo $?)"
+
+# --- soong.json with an architect.json fallback -----------------------------
+rm -f "$config" "$legacy"
+seed_legacy '{"legacyonly":{"roadmapDb":"LR","taskDb":"LT","taskTemplate":null}}'
+check "falls back to architect.json"  0    "$(run get legacyonly)"
+check "fallback reads the record"     LR   "$(bash "$script" get legacyonly | jq -r .roadmapDb)"
+
+# soong.json wins outright; the two files are never merged
+seed '{"both":{"roadmapDb":"NEW","taskDb":"NT","taskTemplate":null}}'
+seed_legacy '{"both":{"roadmapDb":"OLD","taskDb":"OT","taskTemplate":null},"legacyonly":{"roadmapDb":"LR","taskDb":"LT","taskTemplate":null}}'
+check "soong.json wins"            NEW "$(bash "$script" get both | jq -r .roadmapDb)"
+check "no merge from the legacy file" 3 "$(run get legacyonly)"
+
+# set always writes the new file and never touches the old one
+rm -f "$config"
+seed_legacy '{"migrate":{"roadmapDb":"OLD","taskDb":"OT","taskTemplate":null}}'
+bash "$script" set --roadmap-db NEWR --task-db NEWT migrate >/dev/null 2>&1
+check "set wrote soong.json"       NEWR "$(jq -r '.migrate.roadmapDb' "$config")"
+check "set left architect.json be" OLD  "$(jq -r '.migrate.roadmapDb' "$legacy")"
+rm -f "$legacy"
 
 echo
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }

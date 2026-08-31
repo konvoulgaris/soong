@@ -34,7 +34,24 @@ else
   [ -n "${HOME:-}" ] || die "set XDG_DATA_HOME or HOME so the config has a home" 2
   dir="$HOME/.local/share/soong"
 fi
-file="$dir/architect.json"
+file="$dir/soong.json"
+legacy="$dir/architect.json"
+
+# Reads prefer soong.json and fall back to the pre-rename name, so a repo
+# configured before the rename keeps working with no migration step. Writes
+# always target soong.json, so the first set migrates the repo. The fallback is
+# read-only and one directional: nothing writes back to architect.json, and the
+# two files are never merged, because a merge needs a precedence rule the user
+# cannot see.
+read_file() {
+  if [ -f "$file" ]; then
+    echo "$file"
+  elif [ -f "$legacy" ]; then
+    echo "$legacy"
+  else
+    return 1
+  fi
+}
 
 # One repo is one mapping, so key on the main checkout even from a linked
 # worktree: --show-toplevel would return the worktree dir and split the mapping
@@ -64,13 +81,13 @@ case "$cmd" in
     [ $# -le 1 ] || die "get takes at most one project argument" 2
     command -v jq >/dev/null || die "jq is required"
     project="$(resolve_project "${1:-}")" || exit $?
-    [ -f "$file" ] || die "no config for '$project'" 3
-    jq -e . "$file" >/dev/null 2>&1 || die "$file is not valid JSON"
-    jq -e 'type == "object"' "$file" >/dev/null 2>&1 || die "$file is not a JSON object"
+    src="$(read_file)" || die "no config for '$project'" 3
+    jq -e . "$src" >/dev/null 2>&1 || die "$src is not valid JSON"
+    jq -e 'type == "object"' "$src" >/dev/null 2>&1 || die "$src is not a JSON object"
     # --exit-status would also fire on a stored false/null, so test for the key.
-    jq -e --arg p "$project" 'has($p)' "$file" >/dev/null 2>&1 \
+    jq -e --arg p "$project" 'has($p)' "$src" >/dev/null 2>&1 \
       || die "no config for '$project'" 3
-    jq --arg p "$project" '.[$p]' "$file"
+    jq --arg p "$project" '.[$p]' "$src"
     ;;
 
   set)
