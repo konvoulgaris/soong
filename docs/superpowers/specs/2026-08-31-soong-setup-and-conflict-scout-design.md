@@ -18,7 +18,9 @@ can declare a requirement against.
   and pull request subjects carry a scope. `pr-guard` enforces the declaration in
   both directions: a repo that requires a scope denies subjects without one, and a
   repo that does not use scopes denies subjects with one. The rule reaches pull
-  request titles and `git commit -m` messages.
+  request titles and `git commit -m` messages. A repo that has answered neither
+  way is unaffected, which is what keeps the plugin from denying commits in every
+  repository the user has not set up.
 * **`conflict-scout`**, an agent that searches the configured Notion databases
   for existing roadmap items and tasks that overlap a proposed feature. The
   `architect` skill runs it twice, and on a hit asks the user whether to abandon,
@@ -143,6 +145,12 @@ that branches on them keeps working.
 An unknown capability is exit 2, not exit 3. A typo in a skill's `check` call
 must not read as "the user needs to run setup."
 
+**"Present" means `has(key)`, not truthiness.** `requireScope: false` is a fully
+configured `commits` capability, and `taskTemplate: null` is a deliberate skip. A
+`jq -e` truthiness test would read both as missing. The existing `get`
+implementation already carries a comment about this trap, for the same reason, and
+`check` hits it twice over. Every presence test in `check` uses `has`.
+
 **`check [project]`** with no capability sweeps every capability in the table and
 prints one line each: the capability, whether it is satisfied, and the names of
 any missing keys. Exit 0 when all are satisfied, exit 3 when any is not.
@@ -169,6 +177,12 @@ Two changes from `architect-setup.sh set`:
   reconfiguration. Merging is what makes the capabilities independent.
 
 `--require-scope` accepts `true` or `false` only. Any other value is exit 2.
+
+Everything else about `set` carries over from `architect-setup.sh` unchanged: the
+`chmod 700` on the config directory, because the key names alone leak the user's
+project list; the `chmod 600` on the file; and the write through a `mktemp` file
+in the target directory followed by a rename, so the write is atomic and cannot
+cross devices. The temp file prefix changes from `.architect.` to `.soong.`.
 
 ### The third state
 
@@ -213,19 +227,35 @@ answer is a boolean rather than an id the script cannot validate.
 
 ### Callers
 
-`architect` Step 1 and `develop` first-run step 1 both call
+Both `architect` Step 1 and `develop` first-run step 1 need two things: a
+yes-or-no answer about the `notion` capability, and the ids themselves. So both
+run the same two calls, in this order.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check notion
+bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
 ```
 
-and invoke `soong-setup` rather than `architect-setup` on exit 3. Their exit-code
-branching is otherwise unchanged: 0 continues, 1 reports a corrupt config and
-stops, 2 reports a non-repository and stops, 3 runs setup and re-checks.
+**Step A, `check notion`:**
 
-`architect` Step 1 additionally still needs the ids themselves, so it calls `get`
-after a successful `check` and reads `roadmapDb`, `taskDb`, and `taskTemplate`
-from the JSON.
+| Exit | Action                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------- |
+| 0    | go to Step B                                                                                        |
+| 1    | report the corrupt config and stop. Never run setup to "fix" it; `set` refuses to overwrite one      |
+| 2    | report the non-repository or usage error and stop                                                     |
+| 3    | say the repo is not configured for Notion, invoke `soong-setup notion`, then re-run Step A once. Anything other than 0 on the re-run stops |
+
+**Step B, `get`:** read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON.
+A non-zero exit here is a bug rather than a user problem, because Step A just
+confirmed the keys exist. Report the exit code and stop; do not run setup again,
+because the state that produced it is not one setup can resolve.
+
+The exit codes are the same numbers `architect-setup.sh get` used, but exit 3
+does not mean the same thing, and the callers' prose must change accordingly.
+`get` exit 3 meant "this repo has no record at all." `check notion` exit 3 means
+"the `notion` keys are missing," which is also true of a repo that has a record
+holding `requireScope` alone. A caller that says "this repo is not configured" on
+exit 3 is still correct; one that says "this repo has never been set up" is not.
 
 ## Section 2: the scope rule in pr-guard
 
@@ -234,16 +264,42 @@ from the JSON.
 `pr-guard.sh` runs as a `PreToolUse` hook on every `Bash` call. It reads
 `requireScope` by calling `soong-setup.sh get` and extracting the key.
 
-Any failure means the scope rule is not enforced: a non-zero exit, a missing
-`jq`, a missing config file, a corrupt config, or a `requireScope` that is
-absent. All collapse to the same behavior, and none surfaces an error to the
-user.
+**It locates the script relative to its own path,** not through
+`CLAUDE_PLUGIN_ROOT`:
 
-This is deliberate. A guard that starts failing loudly on every Bash command
+```bash
+setup="$(cd "$(dirname "$0")/../../skills/soong-setup/scripts" && pwd)/soong-setup.sh"
+```
+
+No hook script in this plugin references `CLAUDE_PLUGIN_ROOT` today, and the
+variable is set for the hook *command* in `hooks.json` rather than guaranteed
+inside the subprocess. Depending on it would give a silent failure: the call
+fails, the fail-open rule below turns that into "no scope rule," and the feature
+appears to work while enforcing nothing anywhere. Deriving the path from `$0`
+keeps one implementation of the project-key derivation, which is the reason for
+calling the script at all rather than parsing `soong.json` directly.
+
+Any failure means the scope rule is not enforced: a missing script, a non-zero
+exit, a missing `jq`, a missing config file, a corrupt config, or a
+`requireScope` that is absent. All collapse to the same behavior, and none
+surfaces an error to the user.
+
+The guard also inherits the script's git-repository dependency. `get` resolves
+the project key through `git rev-parse --git-common-dir`, so a `gh pr create` or
+`git commit` run outside a repository exits 2 and takes the fail-open path. That
+is correct — there is no repo whose convention could apply — but it is worth
+naming, because the guard itself fires on every Bash call regardless of the
+working directory.
+
+Fail-open is deliberate. A guard that starts failing loudly on every Bash command
 because a config file got corrupted is worse than one that quietly stops checking
-scope. The rest of the guard — the Conventional Commits shape, the placeholder
-scope check, the generated-by footer checks — is unaffected by a failed config
-read and keeps running.
+scope. The rest of the guard — the Conventional Commits shape on pull request
+titles, the placeholder scope check, the generated-by footer checks — is
+unaffected by a failed config read and keeps running.
+
+Because a silent failure is the risk here, the test file gets one case that
+asserts the resolved path exists, so a future directory move fails a test rather
+than disabling the rule.
 
 ### Pull request titles
 
@@ -268,19 +324,53 @@ scope is present. Splitting it that way keeps the shape rule in one place.
 
 ### Commit messages
 
-A new branch matches `git commit`. It extracts the subject from:
+A new branch matches `git commit`. It extracts the subject from `-m` /
+`--message`; the first occurrence is the subject, and later `-m` flags are body
+paragraphs that are not checked for shape.
 
-* `-m` / `--message` — the first occurrence is the subject. Later `-m` flags are
-  body paragraphs and are not checked for shape.
-* `-F` / `--file` — the message is not in the command.
+**The whole branch is gated on the `commits` capability being configured.** When
+`requireScope` is absent, the branch does nothing at all — it does not check the
+scope rule, and it does not check the Conventional Commits shape either.
 
-The branch applies two checks to the subject: the Conventional Commits shape, and
-the scope rule in whichever state the config says.
+That gate is the point. Without it, installing this plugin would start denying
+`git commit -m "wip"` in every repository the user has never set up, which is the
+same blast radius the "third state" section rejects for the scope rule. Commit
+messages are far higher-frequency than pull request titles, so shipping a new
+universal denial on them is the more damaging of the two. A repo opts into commit
+checking by answering the `commits` question, in either direction.
+
+Pull request titles keep their existing unconditional shape check. That is not a
+new denial — the guard has always applied it — so leaving it alone changes
+nothing for anyone.
+
+Once the capability is configured, the branch applies the Conventional Commits
+shape and the scope rule for the stored state.
 
 **It does not apply the generated-by footer checks.** Those exist for pull
 requests and comments. This project's own instructions require a
 `Co-Authored-By: Claude Opus 5` trailer on commits, so applying the pull request
 footer rule to commits would deny the thing the project requires.
+
+**Generated subjects and amends are exempt from the shape check.** The branch
+skips it when the command carries `--fixup` or `--squash`, because git generates
+`fixup! <subject>` and `squash! <subject>`, which cannot satisfy Conventional
+Commits and are meant to be absorbed by a later rebase. It also skips `--amend`
+with no `-m`, which reuses or re-edits an existing message. These are routine in
+the stacked-pull-request workflow `develop` builds, so denying them would break
+the plugin's own main path.
+
+### Branch order
+
+The existing script comments explain that pull request create and edit is
+ordered first because a hook must emit at most one JSON object, so a compound
+command that does two guarded things stops at the first.
+
+The commit branch goes **after** the pull request branch and **before** the
+comment branch. So `git commit -m "..." && gh pr create --title "..."` is judged
+on its title, not its commit subject. That ordering is a deliberate preference for
+the check that has always existed and applies to every repo over the one that is
+new and per-repo; a user whose compound command is denied for the title fixes the
+title and runs again, at which point the commit subject is checked on its own.
 
 ### The ceiling
 
@@ -291,8 +381,10 @@ cannot check:
 * `git commit -F <file>`, where the message is in a file
 * a message piped in through a heredoc
 
-For those the guard advises rather than denies. It cannot deny what it cannot
-read, and a denial based on an unread message would block a legitimate commit.
+For those the guard advises rather than denies, and only when the `commits`
+capability is configured — an unconfigured repo hears nothing. It cannot deny
+what it cannot read, and a denial based on an unread message would block a
+legitimate commit.
 
 `-m` is what an agent actually uses, so that is where the enforcement lands. The
 alternative — installing a `commit-msg` git hook per repository — is a separate
@@ -306,21 +398,39 @@ upgrade path.
 gains cases for:
 
 * each of the three states, on pull request titles, both denied and allowed
-* each of the three states, on `git commit -m`
+* `true` and `false`, on `git commit -m`, both denied and allowed
+* absent, on `git commit -m`: nothing is checked, including the shape, so
+  `git commit -m "wip"` is allowed
 * a placeholder scope under `true`, still denied
 * a corrupt config, a missing config, and a missing `jq`: the guard still runs
   its other checks and enforces no scope rule
+* the resolved path to `soong-setup.sh` exists, so a future directory move fails
+  a test rather than silently disabling the rule
 * `git commit -F file` and a bare `git commit`: advised, not denied
+* `--amend` with no `-m`, `--fixup`, and `--squash`: shape check skipped
 * a commit with a `Co-Authored-By` trailer: allowed
+* `git commit -m "wip" && gh pr create --title "bad"` under `true`: denied on the
+  title, and the hook emits exactly one JSON object
 
 ## Section 3: conflict-scout
 
 `plugins/soong/agents/conflict-scout.md`.
 
 ```yaml
+name: conflict-scout
+description: <one line, ending in the read-only claim>
 model: sonnet
-tools: Read, Grep, Glob, Bash, <Notion MCP read tools>
 ```
+
+**No `tools` key.** Neither `architect-cobrain` nor `adversarial-judge` declares
+one, and Notion MCP tool names carry a per-installation identifier
+(`mcp__<uuid>__notion-*`), so a literal list would be wrong on every machine but
+the one it was written on. The agent inherits the session's tools, including the
+Notion MCP, and the read-only constraint is stated in prose in the agent body,
+exactly as the other two agents state theirs.
+
+`model: sonnet` sits alongside the existing `fable` and `opus`, so this is the
+third tier the plugin uses rather than a new convention.
 
 Read-only. It never writes to Notion and never edits a file, the same posture as
 `architect-cobrain` and `adversarial-judge`.
@@ -380,9 +490,16 @@ candidates are dropped rather than reported.
 - Verdict:  conflicts | builds-on | unrelated
 ```
 
-More than about six candidates means the sweep was too broad. The agent says so
-rather than dumping the list, because a long list is indistinguishable from noise
-at the gate that has to act on it.
+More than about six candidates means the sweep was too broad. The agent returns
+its six strongest candidates and says the sweep was too broad, rather than
+dumping the whole list, because a long list is indistinguishable from noise at the
+gate that has to act on it.
+
+The dispatching gate treats that as an ordinary hit: it presents the six and asks
+the same three-answer question, prefixed with the agent's own warning that it
+found more than it could rank confidently. It is not a fourth answer. A too-broad
+sweep is weak evidence, not a reason to stop, and the user is the one who can
+tell at a glance whether any of the six is real.
 
 When it finds nothing it says so plainly. That is the common case and it must be
 cheap to read.
@@ -403,10 +520,10 @@ Candidates found: present them and ask one question with three answers.
 | Answer            | Effect                                                                                                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Abandon**       | Stop. Print the conflicting card URLs. Write nothing, brainstorm nothing.                                                                                      |
-| **Build on top**  | Continue to Step 2, carrying the conflicting cards in as context. The spec then states what it extends and what it must not duplicate, and Step 5 links the new roadmap item to the existing one rather than opening a parallel track. |
+| **Build on top**  | Continue to Step 2, carrying the conflicting cards in as context. The spec states what it extends and what it must not duplicate, and Step 5 names the existing cards by title and URL in the new roadmap item's body. |
 | **Proceed anyway**| Continue as if nothing was found. Record the dismissed cards so Gate 2 does not re-ask them.                                                                    |
 
-### Gate 2: after the brainstorm, before cobrain
+### Gate 2: new Step 2.5
 
 After the user approves the design in Step 2, before the Step 3 cobrain dispatch.
 
@@ -420,10 +537,29 @@ The same three answers, with two differences:
   Asking twice about the same card trains the user to dismiss by reflex.
 * "Build on top" means revising the spec rather than restarting the brainstorm:
   go back into the design with the conflicting cards as context, then re-run this
-  gate on the revised spec.
+  step on the revised spec.
 
 Abandoning here still costs a brainstorm. It saves the cobrain dispatch, the
 two-judge council, the Step 4 walk, and the irreversible Notion writes.
+
+### The dismissed set
+
+Both gates depend on a set of card ids the user dismissed with "proceed anyway",
+and Step 2.5 can loop, so the set has to survive a loop.
+
+**It lives in main-thread context.** `architect` has no ledger — unlike
+`develop`, which needs one because it resumes across sessions — and adding one for
+a set that matters only between two adjacent steps of a single run is a store
+whose invalidation rules would outweigh what it holds.
+
+The cost is honest: a context compaction between Step 1.5 and Step 2.5 loses the
+set, and Step 2.5 then re-asks about a card the user already dismissed. That is
+one redundant question in a rare case, against a persistent store in every case.
+The skill states the cost so the behavior reads as a known limit rather than a
+bug.
+
+Each dismissal is recorded as the card's Notion page id, not its title. Titles are
+editable and can collide.
 
 ### Why Gate 2 is not a Step 4 finding
 
@@ -443,19 +579,37 @@ reconsider work they have already committed to by running the command.
 
 ## Files
 
+Renames are `git mv` plus edits, so the history follows the file.
+
 | File                                                        | Change  |
 | ----------------------------------------------------------- | ------- |
-| `plugins/soong/skills/soong-setup/SKILL.md`                  | added, replaces `architect-setup/SKILL.md` |
-| `plugins/soong/skills/soong-setup/scripts/soong-setup.sh`     | added, replaces `architect-setup.sh` |
-| `plugins/soong/skills/soong-setup/scripts/soong-setup.test.sh`| added, extends the existing test file |
-| `plugins/soong/skills/architect-setup/`                       | removed |
+| `plugins/soong/skills/soong-setup/SKILL.md`                  | moved from `architect-setup/SKILL.md`, then rewritten for the capability argument and the `commits` question |
+| `plugins/soong/skills/soong-setup/scripts/soong-setup.sh`     | moved from `architect-setup.sh`, then `check` added and `set` made merging |
+| `plugins/soong/skills/soong-setup/scripts/soong-setup.test.sh`| moved from `architect-setup.test.sh`, then extended for `check`, the merge semantics, and the `architect.json` fallback |
+| `plugins/soong/skills/architect-setup/`                       | gone once the three files above are moved out of it |
 | `plugins/soong/agents/conflict-scout.md`                      | added |
 | `plugins/soong/hooks/scripts/pr-guard.sh`                     | scope rule, commit branch |
 | `plugins/soong/hooks/scripts/pr-guard.test.sh`                | cases for both |
-| `plugins/soong/skills/architect/SKILL.md`                     | Step 1 caller, Step 1.5, Gate 2, frontmatter, Assumes |
-| `plugins/soong/skills/develop/SKILL.md`                       | step 1 caller, frontmatter, Assumes, error table |
+| `plugins/soong/skills/architect/SKILL.md`                     | Step 1 caller, new Step 1.5, new Step 2.5, Step 5 names the extended cards, frontmatter, Assumes |
+| `plugins/soong/skills/develop/SKILL.md`                       | first-run step 1 caller (line 74) and its prose (line 78), frontmatter (line 3), Assumes (line 21), error table (line 442) |
 | `README.md`                                                   | requirements name the new setup skill |
-| `plugins/soong/.claude-plugin/plugin.json`                    | minor version bump |
+| `plugins/soong/.claude-plugin/plugin.json`                    | `0.10.1` to `0.11.0` |
+
+The specs and plans under `docs/superpowers/` also mention `architect-setup`.
+They are a historical record of what was designed at the time, so they are left
+alone.
+
+### On the version bump
+
+`0.10.1` to `0.11.0` follows this repo's rule, which puts features in the minor.
+But the change renames a user-facing skill: `/architect-setup` stops existing, and
+`/soong-setup` replaces it. A user who has that command in muscle memory or in a
+saved prompt gets a miss.
+
+So the minor bump is correct per the rule and still understates what changed. The
+release note has to say the command was renamed. There is no alias, because a
+deprecated alias for a personal-archive plugin is a second name to keep working
+forever in exchange for saving one correction.
 
 ## Out of scope
 
