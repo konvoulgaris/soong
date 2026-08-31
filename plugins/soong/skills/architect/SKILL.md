@@ -15,6 +15,7 @@ This skill plans. It does not implement.
 ## Assumes
 
 - The `superpowers` plugin (`superpowers:brainstorming`).
+- The `conflict-scout` agent, which queries Notion for overlapping work.
 - The Notion MCP.
 
 ## Step 1: Check configuration
@@ -94,6 +95,46 @@ Frame the design as a **stack of PRs** from the start:
 - Each PR is small, self-contained, and reviewable on its own.
 - Each PR leaves the branch working; no PR depends on a later one to make sense.
 - The stack has an order, and each step names what it depends on.
+
+## Step 2.5: Re-check for existing work, now that the spec exists
+
+After the user approves the design, before the cobrain dispatch.
+
+Dispatch `conflict-scout` again, with the spec, the pull request stack, the files
+each pull request touches, the two database ids, the fact that this is run 2, and
+the card ids the user dismissed at Step 1.5. This is far better input than Step
+1.5 had, so it catches overlap a one-line request could not expose.
+
+The same three answers, with two differences:
+
+- **Cards dismissed with "proceed anyway" at Step 1.5 are not re-asked.** Asking
+  twice about the same card trains the user to dismiss by reflex. That is why the
+  dismissed ids are passed in.
+- **"Build on top" here revises the spec rather than restarting the brainstorm.**
+  Go back into the design with the conflicting cards as context, then run this
+  step again on the revised spec.
+
+Abandoning here still costs a brainstorm. It saves the cobrain dispatch, the
+two-judge council, the Step 4 walk, and the irreversible Notion writes.
+
+### These conflicts are not Step 4 findings
+
+Do not fold them into the Step 4 queue. "Abandon this spec" is a decision, not a
+fix to apply to a spec, and the Step 3.5 council can drop a finding. A dropped
+"this duplicates an in-flight roadmap item" is exactly the swallowed blocker that
+Step 4's notices exist to prevent.
+
+### The dismissed set
+
+The dismissed card ids live in this conversation, not in a file. `architect` has
+no ledger, unlike `develop`, which needs one because it resumes across sessions.
+
+The cost is real and worth stating: if this conversation is compacted between
+Step 1.5 and Step 2.5, the set is lost and this step re-asks about a card the
+user already dismissed. That is one redundant question in a rare case, against a
+persistent store in every case.
+
+Record page ids, not titles. Titles are editable and can collide.
 
 ## Step 3: Review with architect-cobrain
 
@@ -186,6 +227,8 @@ instructions on articles and sentence form.
 - A **mermaid diagram** when it earns its place, i.e. when it shows a new flow or a
   changed architecture more clearly than prose. Skip it for a change a sentence covers.
 - The PR stack as an ordered list, each entry naming its scope and its dependency.
+- When the user chose "build on top" at Step 1.5 or Step 2.5, the cards this work
+  extends, by title and URL, and what this item does not duplicate.
 
 **One task per PR** (in `taskDb`), created from `taskTemplate` when set, otherwise the
 database's default template:
