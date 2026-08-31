@@ -301,6 +301,23 @@ exit 3 is still correct; one that says "this repo has never been set up" is not.
 `pr-guard.sh` runs as a `PreToolUse` hook on every `Bash` call. It reads
 `requireScope` by calling `soong-setup.sh get` and extracting the key.
 
+**The read is lazy and memoized,** behind a `scope_rule()` function that computes
+on first call and caches. This matters more than it looks: the hook fires on every
+Bash tool call, and the read spawns three processes — `soong-setup.sh`, the
+`git rev-parse` inside it, and `jq`. Measured unconditionally at the top of the
+script, that took a trivial `ls` from ~32 ms to ~88 ms per call, roughly 3x, paid
+by every command that has nothing to do with pull requests. Behind the function,
+only a command that reaches a branch needing the value pays for it.
+
+The cache uses a separate loaded flag rather than testing whether the value is
+empty, because the empty string is a legitimate cached result: it is the
+not-configured state, and re-reading it on every reference would defeat the point.
+
+One trap for anyone adding a branch that needs the value: call
+`require_scope=$(scope_rule)` **inside** the branch, not at the top of the script.
+A top-level capture runs in a subshell, so the cache never reaches the branch and
+a single command reads the config twice.
+
 **It locates the script relative to its own path,** not through
 `CLAUDE_PLUGIN_ROOT`:
 
