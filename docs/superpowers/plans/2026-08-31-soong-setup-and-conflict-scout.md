@@ -91,6 +91,7 @@ The `git mv` changed the paths, not the text inside. Several places still say `a
 In `soong-setup.sh`:
 
 - The header comment block at the top: the three `architect-setup.sh` usage lines, and the `Config:` line's `architect.json` → `soong.json`.
+- The two prose lines that describe what the script is for — line 2 of the header, and the first line inside the `usage()` heredoc — both read "Read or write the architect Notion mapping for a repo." Reword both to "Read or write soong's per-repo configuration." The script stops being architect-only in Task 3, when it starts holding `requireScope`, so the old wording becomes wrong rather than merely stale.
 - `die() { echo "architect-setup: $1" >&2; ... }` → `echo "soong-setup: $1"`.
 - The `usage()` heredoc: every `architect-setup.sh` → `soong-setup.sh`, and `architect.json` → `soong.json`.
 - The temp file: `mktemp "$dir/.architect.XXXXXX"` → `mktemp "$dir/.soong.XXXXXX"`, and the `trap` above it needs no change.
@@ -317,7 +318,11 @@ Delete all three. The third one is easy to miss and depends on the first two, so
 bash plugins/soong/skills/soong-setup/scripts/soong-setup.test.sh
 ```
 
-Expected: the merge cases FAIL (`scope survived a notion set` returns `null`), and `--require-scope` is rejected as an unknown flag with exit 2 — which accidentally passes the two `badscope` cases for the wrong reason. That is fine; Step 4 makes them pass for the right one.
+Expected failures, all four of which are correct TDD at this point:
+
+- the merge cases — `scope survived a notion set` returns `null`
+- `--require-scope` is rejected as an unknown flag with exit 2, which accidentally passes the two `badscope` cases for the wrong reason. Fine; Step 4 makes them pass for the right one.
+- both new `has()` assertions. Before the merge, `set` replaces the whole object and always writes `taskTemplate: null`, so `has("taskTemplate")` returns `true` where the test wants `false`, and `roadmapDb` is always present. The tests are right and the implementation is not there yet.
 
 - [ ] **Step 3: Implement the merge and the new flag**
 
@@ -550,9 +555,11 @@ Then add the `check` branch to the main `case`, before the `-h|--help|help` arm:
         --project=*) project_arg="${1#--project=}" ;;
         -*) die "unknown flag: $1" 2 ;;
         *)
-          [ -z "$cap" ] || die "check takes at most one capability" 2
+          # Validate before the duplicate check, so `check notion badcap` names
+          # badcap rather than complaining about the count.
           required_keys "$1" >/dev/null 2>&1 \
             || die "unknown capability '$1' (want: $capabilities)" 2
+          [ -z "$cap" ] || die "check takes at most one capability" 2
           cap="$1"
           ;;
       esac
