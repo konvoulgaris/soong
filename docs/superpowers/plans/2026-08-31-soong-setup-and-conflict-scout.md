@@ -84,29 +84,42 @@ ls plugins/soong/skills/architect-setup 2>&1
 
 Expected: `No such file or directory`. If the directory still exists, something was left behind — list it and move it.
 
-- [ ] **Step 3: Point the test at the renamed script**
+- [ ] **Step 3: Rename every self-reference inside both files**
 
-In `soong-setup.test.sh`, two lines need editing. Line 2's comment, and the `script=` line:
+The `git mv` changed the paths, not the text inside. Several places still say `architect`, and Chunk 5 greps for exactly that, so rename them now.
 
-```bash
-# Self-check for soong-setup.sh. Run: bash soong-setup.test.sh
-```
+In `soong-setup.sh`:
 
-```bash
-script="$(cd "$(dirname "$0")" && pwd)/soong-setup.sh"
-```
+- The header comment block at the top: the three `architect-setup.sh` usage lines, and the `Config:` line's `architect.json` → `soong.json`.
+- `die() { echo "architect-setup: $1" >&2; ... }` → `echo "soong-setup: $1"`.
+- The `usage()` heredoc: every `architect-setup.sh` → `soong-setup.sh`, and `architect.json` → `soong.json`.
+- The temp file: `mktemp "$dir/.architect.XXXXXX"` → `mktemp "$dir/.soong.XXXXXX"`, and the `trap` above it needs no change.
+
+In `soong-setup.test.sh`:
+
+- Line 2's comment: `# Self-check for soong-setup.sh. Run: bash soong-setup.test.sh`
+- The `script=` line: `script="$(cd "$(dirname "$0")" && pwd)/soong-setup.sh"`
+- The temp-file leak check near the end greps for the old prefix: `find ... -name '.architect.*'` → `-name '.soong.*'`. This one matters. Leave it and it passes vacuously forever, because nothing will ever create a `.architect.*` file again, so the leak check silently stops checking.
 
 Leave the `config=` line pointing at `architect.json` for now. Task 2 changes it, and changing both at once means a failing run you cannot attribute.
 
-- [ ] **Step 4: Run the moved test suite**
+- [ ] **Step 4: Confirm the only remaining `architect` mentions are the ones you want**
+
+```bash
+grep -n "architect" plugins/soong/skills/soong-setup/scripts/*
+```
+
+Expected: only the `config=` line in the test file, which Task 2 replaces. Anything else is a rename you missed.
+
+- [ ] **Step 5: Run the moved test suite**
 
 ```bash
 bash plugins/soong/skills/soong-setup/scripts/soong-setup.test.sh
 ```
 
-Expected: every check passes, exit 0. The script's behavior has not changed, only its path. A failure here means the move broke something — fix it before continuing.
+Expected: every check passes, exit 0. The script's behavior has not changed, only its path and its own name for itself. A failure here means the move or a rename broke something — fix it before continuing.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A plugins/soong/skills
@@ -273,18 +286,30 @@ check "set with no flags wrote nothing" 3 "$(run get noflags)"
 # a partial set on a repo that does not exist yet still creates it
 check "partial set creates" 0 "$(run set --task-db ONLYT newrepo)"
 check "partial set stored"  ONLYT "$(bash "$script" get newrepo | jq -r .taskDb)"
-check "unset key is absent" 0 "$(bash "$script" get newrepo | jq -e 'has(\"roadmapDb\") | not' >/dev/null; echo $?)"
+check "unset key is absent" false "$(bash "$script" get newrepo | jq -r 'has("roadmapDb")')"
 ```
 
-That last case matters: an unset key must be **absent**, not `null`. `check` in Task 4 tests presence with `has()`, and a stored `null` would read as configured.
+That last case matters: an unset key must be **absent**, not `null`. `check` in Task 4 tests presence with `has()`, so a stored `null` would read as configured.
 
-Also update the two existing cases that assert `set` requires both database flags — they now contradict the merge behavior. Find and delete these lines:
+Note the quoting: `jq -r 'has("roadmapDb")'` uses double quotes **inside** single quotes. Writing `jq -e 'has(\"roadmapDb\")'` does not work — inside single quotes the backslashes are literal and jq fails to compile, which would make this case fail no matter what the script does.
+
+While you are here, tighten the pre-existing `template null when omitted` case at roughly line 33. It asserts `jq -r .taskTemplate` is `null`. After Task 3 the key is **absent** rather than holding a JSON `null`, and `jq -r` prints `null` for both — so the case keeps passing while no longer testing anything. Make the distinction explicit:
+
+```bash
+check "template absent when omitted" false "$(bash "$script" get demo | jq -r 'has("taskTemplate")')"
+```
+
+Absent is correct here, and it is why the `notion` capability lists `taskTemplate` as optional: only `roadmapDb` and `taskDb` gate the capability, so an absent template never makes `check notion` fail. Delete the old `null` assertion rather than keeping both — one of them has to carry the meaning, and `has()` is the one that does.
+
+Three existing cases assert that `set` requires both database flags. That is no longer true — a repo may configure `commits` alone — so all three must go. They sit together at roughly lines 60-62:
 
 ```bash
 check "missing --roadmap-db exits 2" 2 "$(run set --task-db T only-task)"
+check "missing --task-db exits 2"    2 "$(run set --roadmap-db R only-roadmap)"
+check "rejected set wrote nothing"   3 "$(run get only-task)"
 ```
 
-and its `--task-db` counterpart if present. Replace with the "no flags" cases above, which are the real constraint now.
+Delete all three. The third one is easy to miss and depends on the first two, so leaving it gives a failure that looks unrelated to what you changed. The "no flags" cases above are the real constraint now.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -296,16 +321,30 @@ Expected: the merge cases FAIL (`scope survived a notion set` returns `null`), a
 
 - [ ] **Step 3: Implement the merge and the new flag**
 
-In the `set` branch, add `scope=""` to the variable initialisation line, then add the flag to both `case` arms. In the long-form arm, add `--require-scope` to the flag list and this to the inner dispatch:
+In the `set` branch, add `scope=""` to the variable initialisation line, then add the flag to both `case` arms.
+
+The long-form arm is two levels of `case`, which is easy to get wrong, so here is the whole thing. Add `--require-scope` to the outer pattern list, and the new arm to the inner dispatch:
 
 ```bash
+        --roadmap-db|--task-db|--task-template|--require-scope)
+          flag="$1"; shift
+          [ $# -gt 0 ] || die "$flag needs a value" 2
+          case "$1" in -*) die "$flag needs a value, got '$1'" 2 ;; esac
+          case "$flag" in
+            --roadmap-db) roadmap="$1" ;;
+            --task-db) task="$1" ;;
+            --task-template) template="$1"; template_seen=1 ;;
             --require-scope)
               case "$1" in
                 true|false) scope="$1" ;;
                 *) die "--require-scope takes true or false, got '$1'" 2 ;;
               esac
               ;;
+          esac
+          ;;
 ```
+
+Note that `--task-template` gains `template_seen=1` here; Step 4 explains why.
 
 And the `=`-form:
 
@@ -403,37 +442,42 @@ Append to `soong-setup.test.sh`:
 
 ```bash
 # --- check <capability> ------------------------------------------------------
+# A project is passed with --project, never as a bare argument: a bare argument is
+# always a capability, so a typo cannot be mistaken for a project name.
 rm -f "$config"
-check "check on an unconfigured repo exits 3" 3 "$(run check notion nothing)"
+check "check on an unconfigured repo exits 3" 3 "$(run check notion --project nothing)"
 
 bash "$script" set --roadmap-db R --task-db T chk >/dev/null 2>&1
-check "notion satisfied"        0 "$(run check notion chk)"
-check "commits not satisfied"   3 "$(run check commits chk)"
+check "notion satisfied"        0 "$(run check notion --project chk)"
+check "commits not satisfied"   3 "$(run check commits --project chk)"
 
 # a stored false satisfies commits: presence is has(), not truthiness
 bash "$script" set --require-scope false chk >/dev/null 2>&1
-check "commits satisfied by false" 0 "$(run check commits chk)"
+check "commits satisfied by false" 0 "$(run check commits --project chk)"
 
 # a partial notion config is not satisfied, and says which key is missing
 bash "$script" set --task-db T2 partial >/dev/null 2>&1
-check "partial notion exits 3" 3 "$(run check notion partial)"
-missing="$(bash "$script" check notion partial 2>&1 >/dev/null)"
+check "partial notion exits 3" 3 "$(run check notion --project partial)"
+missing="$(bash "$script" check notion --project partial 2>&1 >/dev/null)"
 case "$missing" in
   *roadmapDb*) check "names the missing key" 0 0 ;;
   *) check "names the missing key" "roadmapDb in stderr" "$missing" ;;
 esac
 
 # taskTemplate is optional, so its absence does not fail the capability
-check "template not required" 0 "$(run check notion chk)"
+check "template not required" 0 "$(run check notion --project chk)"
 
-# an unknown capability is a caller bug, not an unconfigured repo
-check "unknown capability exits 2" 2 "$(run check notyacapability chk)"
+# a typo is a caller bug, never "the user needs to run setup"
+check "unknown capability exits 2" 2 "$(run check notyacapability --project chk)"
+check "bare typo is not a project"  2 "$(run check comits)"
+check "two capabilities exit 2"     2 "$(run check notion commits)"
+check "--project with no value"     2 "$(run check notion --project)"
 
 # --- check with no capability sweeps everything ------------------------------
-check "sweep exits 3 when any capability is missing" 3 "$(run check partial)"
-bash "$script" set --require-scope true partial --roadmap-db R3 >/dev/null 2>&1
-check "sweep exits 0 when all are satisfied" 0 "$(run check partial)"
-sweep="$(bash "$script" check chk 2>&1)"
+check "sweep exits 3 when any capability is missing" 3 "$(run check --project partial)"
+bash "$script" set --require-scope true --roadmap-db R3 partial >/dev/null 2>&1
+check "sweep exits 0 when all are satisfied" 0 "$(run check --project partial)"
+sweep="$(bash "$script" check --project chk 2>&1)"
 case "$sweep" in
   *notion*commits*|*commits*notion*) check "sweep lists both capabilities" 0 0 ;;
   *) check "sweep lists both capabilities" "notion and commits" "$sweep" ;;
@@ -441,10 +485,12 @@ esac
 
 # a corrupt config is an error, never "unconfigured"
 seed 'not json at all'
-check "check on corrupt config exits 1" 1 "$(run check notion chk)"
-check "sweep on corrupt config exits 1" 1 "$(run check chk)"
+check "check on corrupt config exits 1" 1 "$(run check notion --project chk)"
+check "sweep on corrupt config exits 1" 1 "$(run check --project chk)"
 rm -f "$config"
 ```
+
+Note the `set` call for `partial`: flags come before the trailing project argument. `set` still takes its project as a bare positional — only `check` moved to a flag, because only `check` has a bare argument that could be either thing.
 
 The `commits satisfied by false` case is the one that catches a `jq -e` truthiness test. The `unknown capability exits 2` case is the one that stops a typo in a skill from reading as "run setup".
 
@@ -482,22 +528,38 @@ Then add the `check` branch to the main `case`, before the `-h|--help|help` arm:
 
 ```bash
   check)
-    [ $# -le 2 ] || die "check takes a capability and an optional project" 2
     command -v jq >/dev/null || die "jq is required"
 
-    # check <cap> [project] and check [project] are told apart by whether the
-    # first argument names a capability. So a project sharing a capability's name
-    # would be unreachable in the sweep form; the projects here are repo
-    # directory names, and "notion" or "commits" as a repo name is a collision
-    # worth losing to keep the call sites this short.
-    cap=""
-    if [ -n "${1:-}" ] && required_keys "$1" >/dev/null 2>&1; then
-      cap="$1"; shift
-    elif [ $# -eq 2 ]; then
-      die "unknown capability '$1' (want: $capabilities)" 2
-    fi
+    # A bare first argument is a capability, never a project. So `check comits`
+    # (a typo) is exit 2, not a sweep of a project named "comits" -- a typo in a
+    # skill's check call must never read as "the user needs to run setup", which
+    # is what exit 3 means to every caller.
+    #
+    # That costs the one-argument sweep form: `check <project>` is spelled
+    # `check --project <name>`. Only the test suite passes a project explicitly;
+    # every real caller relies on the default, so the flag costs nothing at the
+    # call sites that exist and removes a whole class of silent misread.
+    cap=""; project_arg=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --project)
+          shift
+          [ $# -gt 0 ] || die "--project needs a value" 2
+          project_arg="$1"
+          ;;
+        --project=*) project_arg="${1#--project=}" ;;
+        -*) die "unknown flag: $1" 2 ;;
+        *)
+          [ -z "$cap" ] || die "check takes at most one capability" 2
+          required_keys "$1" >/dev/null 2>&1 \
+            || die "unknown capability '$1' (want: $capabilities)" 2
+          cap="$1"
+          ;;
+      esac
+      shift
+    done
 
-    project="$(resolve_project "${1:-}")" || exit $?
+    project="$(resolve_project "$project_arg")" || exit $?
 
     src="$(read_file)" || src=""
     if [ -n "$src" ]; then
@@ -542,7 +604,7 @@ Then add the `check` branch to the main `case`, before the `-h|--help|help` arm:
 Update the `usage()` heredoc and the unknown-command `die` message to list `check`:
 
 ```bash
-  soong-setup.sh check [capability] [project]
+  soong-setup.sh check [capability] [--project NAME]
 ```
 
 ```bash
@@ -830,7 +892,9 @@ In `README.md`, under `## Requirements`, add a bullet alongside the existing two
 grep -rn "architect-setup" plugins/ README.md
 ```
 
-Expected: no output. The historical specs and plans under `docs/superpowers/` still mention it and are deliberately left alone, which is why this grep excludes them.
+Expected: no output. If Chunk 1 Task 1 Step 3 renamed the script's internals as instructed, this passes; a hit inside `soong-setup.sh` or its test means that step was skipped.
+
+The historical specs and plans under `docs/superpowers/` still mention `architect-setup` and are deliberately left alone, which is why this grep does not include them.
 
 - [ ] **Step 5: Commit**
 
@@ -1138,17 +1202,22 @@ if [ -n "$require_scope" ]; then
             deny "$(join_reasons "${creasons[@]}") Fix the commit subject and retry."
           fi
         fi
-
-        # ponytail: -m only, and cwd only. A message in an editor, in -F <file>,
-        # or piped via a heredoc is not in the command string, so it cannot be
-        # read and must not be denied unread. And the project key comes from the
-        # cwd, so `git -C /other/repo commit` is judged against this repo's rule
-        # rather than the target's -- working that out means parsing -C and every
-        # cd in a compound command, which is a shell interpreter. Upgrade path
-        # for both: a per-repo commit-msg git hook, which brings its own install,
-        # upgrade, and removal problems.
-        advise "Commit subjects in this repo follow Conventional Commits, and the repo's scope rule is require_scope=$require_scope."
       fi
+
+      # Outside the exempt guard on purpose. An exempted commit -- an amend, a
+      # fixup, a message this hook cannot read -- still gets the reminder, because
+      # the repo does have a convention and only this subject is unjudgeable.
+      # Putting this inside the guard would make every exempt case silent.
+      #
+      # ponytail: -m only, and cwd only. A message in an editor, in -F <file>, or
+      # piped via a heredoc is not in the command string, so it cannot be read and
+      # must not be denied unread. And the project key comes from the cwd, so
+      # `git -C /other/repo commit` is judged against this repo's rule rather than
+      # the target's -- working that out means parsing -C and every cd in a
+      # compound command, which is a shell interpreter. Upgrade path for both: a
+      # per-repo commit-msg git hook, which brings its own install, upgrade, and
+      # removal problems.
+      advise "Commit subjects in this repo follow Conventional Commits, and the repo's scope rule is require_scope=$require_scope."
       ;;
   esac
 fi
@@ -1167,7 +1236,13 @@ Expected: every check passes. Two failure modes to read carefully:
 
 - [ ] **Step 5: Verify the hook still emits exactly one JSON object**
 
-The suite's final loop already checks that every command produces either nothing or valid JSON. Confirm it covers a commit command by adding one to that loop's list, then run the suite again.
+The suite's final loop checks that every command in its list produces either nothing or valid JSON. Add a commit command to that list so the new branch is covered:
+
+```bash
+  'git commit -m "feat(api): thing"'
+```
+
+Put it in the list the `for c in ...` loop iterates, near the end of the file. That loop runs after the last `scope_state` call, which clears the config — so it exercises the silent path, which is the one that must not emit a stray object.
 
 ```bash
 bash plugins/soong/hooks/scripts/pr-guard.test.sh
@@ -1442,10 +1517,19 @@ Expected: both print `0 failed` (or all `ok -` lines) and exit 0. Do not continu
 - [ ] **Step 2: Confirm no stale references survive in the plugin**
 
 ```bash
-grep -rn "architect-setup\|architect\.json" plugins/ README.md
+grep -rn "architect-setup" plugins/ README.md
+grep -rn "architect\.json" plugins/ README.md
 ```
 
-Expected: exactly one hit — the `legacy=` line and its comment in `soong-setup.sh`, which is the deliberate fallback. Any other hit is a miss; fix it.
+The first grep must print **nothing**. Every skill path, every `die()` prefix, and every `usage()` line was renamed in Chunk 1 Task 1 Step 3 and Chunk 2.
+
+The second must print exactly the deliberate fallback: the `legacy=` assignment in `soong-setup.sh`, its explanatory comment, and the `config=`/`legacy=` pair plus the fallback cases in `soong-setup.test.sh`. Those are the migration path and they stay. Anything else is a miss.
+
+```bash
+grep -rn "\.architect\." plugins/
+```
+
+Must print nothing — the temp-file prefix is `.soong.` now, in both the script and the test's leak check.
 
 - [ ] **Step 3: Confirm the guard is inert in this repo**
 

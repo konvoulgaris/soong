@@ -141,7 +141,7 @@ configuring `notion`, and `set` never clears a key it was not given.
 Unchanged from `architect-setup.sh get`, including the exit codes, so a caller
 that branches on them keeps working.
 
-**`check <capability> [project]`** answers "is this capability configured?"
+**`check <capability> [--project NAME]`** answers "is this capability configured?"
 
 | Exit | Meaning                                                       |
 | ---- | ------------------------------------------------------------- |
@@ -153,13 +153,20 @@ that branches on them keeps working.
 An unknown capability is exit 2, not exit 3. A typo in a skill's `check` call
 must not read as "the user needs to run setup."
 
+That rule decides the argument shape. A bare argument to `check` is **always** a
+capability, and a project is named with `--project NAME`. With a bare project
+allowed, `check comits` would be indistinguishable from a sweep of a project
+called `comits`, and would exit 3 — sending the user into setup because a skill
+misspelled a word. `set` keeps its bare positional project, because it has no
+argument that could be either thing.
+
 **"Present" means `has(key)`, not truthiness.** `requireScope: false` is a fully
 configured `commits` capability, and `taskTemplate: null` is a deliberate skip. A
 `jq -e` truthiness test would read both as missing. The existing `get`
 implementation already carries a comment about this trap, for the same reason, and
 `check` hits it twice over. Every presence test in `check` uses `has`.
 
-**`check [project]`** with no capability sweeps every capability in the table and
+**`check [--project NAME]`** with no capability sweeps every capability in the table and
 prints one line each: the capability, whether it is satisfied, and the names of
 any missing keys. Exit 0 when all are satisfied, exit 3 when any is not.
 
