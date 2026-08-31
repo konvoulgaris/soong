@@ -12,6 +12,9 @@
 # set merges into the existing record: it writes only the keys it was given, so
 # configuring one capability never clears another. At least one flag is needed.
 #
+# On first use, a pre-rename architect.json in the same directory is copied
+# forward to soong.json verbatim. The legacy file is kept, untouched, as a backup.
+#
 # Exit codes, so a caller can branch:
 #   0  ok
 #   1  error (no jq, unreadable or corrupt config, failed write)
@@ -44,12 +47,45 @@ fi
 file="$dir/soong.json"
 legacy="$dir/architect.json"
 
-# Reads prefer soong.json and fall back to the pre-rename name, so a repo
-# configured before the rename keeps working with no migration step. Writes
-# always target soong.json, so the first set migrates the repo. The fallback is
-# read-only and one directional: nothing writes back to architect.json, and the
-# two files are never merged, because a merge needs a precedence rule the user
-# cannot see.
+# Copy the pre-rename config forward, once, before anything reads or writes it.
+# Reads preferred soong.json and writes always created it, so the first set on an
+# unmigrated repo stranded that repo's Notion mapping in architect.json where
+# nothing would read it again. Migrating the whole file instead carries every
+# project over, not just the one being written.
+#
+# Only fires when soong.json is absent and architect.json is present, so a second
+# run is a no-op. A corrupt legacy file is left where it is rather than laundered
+# into the new name: the caller then hits the same corrupt-config error it always
+# did, reported against architect.json. The legacy file is never modified or
+# removed, so it stays on disk as a backup.
+migrate_legacy() {
+  [ -f "$file" ] && return 0
+  [ -f "$legacy" ] || return 0
+
+  jq -e 'type == "object"' "$legacy" >/dev/null 2>&1 \
+    || die "$legacy is not a JSON object; fix or remove it"
+
+  mkdir -p "$dir" || die "cannot create $dir"
+  chmod 700 "$dir" 2>/dev/null || true
+
+  # Same dir as the target, so the rename is atomic and a half-copied file can
+  # never appear at soong.json.
+  local tmp
+  tmp="$(mktemp "$dir/.soong.XXXXXX")" || die "cannot create a temp file in $dir"
+  trap 'rm -f "$tmp"' EXIT
+  cat "$legacy" > "$tmp" || die "failed to copy $legacy forward"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file" || die "failed to write $file"
+  trap - EXIT
+}
+
+# Reads prefer soong.json and fall back to the pre-rename name. After migration
+# the fallback is vestigial, because soong.json exists by then. It is kept as the
+# error path for the one case migration declines: a corrupt architect.json, which
+# read_file still surfaces so get reports the corrupt file by name instead of a
+# bare "no config" exit 3. The fallback stays read-only and one directional:
+# nothing writes back to architect.json, and the two files are never merged,
+# because a merge needs a precedence rule the user cannot see.
 read_file() {
   if [ -f "$file" ]; then
     echo "$file"
@@ -87,6 +123,7 @@ case "$cmd" in
   get)
     [ $# -le 1 ] || die "get takes at most one project argument" 2
     command -v jq >/dev/null || die "jq is required"
+    migrate_legacy
     project="$(resolve_project "${1:-}")" || exit $?
     src="$(read_file)" || die "no config for '$project'" 3
     jq -e . "$src" >/dev/null 2>&1 || die "$src is not valid JSON"
@@ -144,6 +181,7 @@ case "$cmd" in
       || die "set needs at least one flag" 2
 
     command -v jq >/dev/null || die "jq is required"
+    migrate_legacy
     project="$(resolve_project "$project")" || exit $?
 
     mkdir -p "$dir" || die "cannot create $dir"

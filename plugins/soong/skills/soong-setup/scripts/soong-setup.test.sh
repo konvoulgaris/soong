@@ -147,6 +147,108 @@ check "set wrote soong.json"       NEWR "$(jq -r '.migrate.roadmapDb' "$config")
 check "set left architect.json be" OLD  "$(jq -r '.migrate.roadmapDb' "$legacy")"
 rm -f "$legacy"
 
+# --- one-time migration of architect.json to soong.json ----------------------
+# The fallback alone was not enough: reads preferred soong.json and writes always
+# created it, so the first set on an unmigrated repo left the Notion mapping
+# stranded in architect.json where nothing would read it again. Copy the whole
+# file forward once instead, so every project carries over, not just the one
+# being written.
+rm -f "$config" "$legacy"
+seed_legacy '{"mig1":{"roadmapDb":"LR1","taskDb":"LT1","taskTemplate":null}}'
+check "get migrates on read"        0    "$(run get mig1)"
+check "migration wrote soong.json"  0    "$([ -f "$config" ]; echo $?)"
+check "migrated content matches"    LR1  "$(jq -r '.mig1.roadmapDb' "$config")"
+
+# the bug: a partial set on an unmigrated repo used to drop the Notion mapping
+rm -f "$config" "$legacy"
+seed_legacy '{"legacyrepo":{"roadmapDb":"LEGACY_R","taskDb":"LEGACY_T","taskTemplate":null}}'
+bash "$script" set --require-scope true legacyrepo >/dev/null 2>&1
+rec="$(bash "$script" get legacyrepo)"
+check "scope set on legacy repo"    true      "$(jq -r .requireScope <<<"$rec")"
+check "legacy roadmapDb survived"   LEGACY_R  "$(jq -r .roadmapDb    <<<"$rec")"
+check "legacy taskDb survived"      LEGACY_T  "$(jq -r .taskDb       <<<"$rec")"
+
+# the whole file migrates, not just the project being touched
+rm -f "$config" "$legacy"
+seed_legacy '{"a":{"roadmapDb":"AR"},"b":{"roadmapDb":"BR"},"c":{"roadmapDb":"CR"}}'
+bash "$script" set --require-scope true a >/dev/null 2>&1
+check "untouched project b carried over" BR "$(bash "$script" get b | jq -r .roadmapDb)"
+check "untouched project c carried over" CR "$(bash "$script" get c | jq -r .roadmapDb)"
+
+# the legacy file is a backup: nothing writes to it, ever
+rm -f "$config" "$legacy"
+seed_legacy '{"keepme":{"roadmapDb":"KR","taskDb":"KT","taskTemplate":null}}'
+cp "$legacy" "$XDG_DATA_HOME/legacy.orig"
+bash "$script" set --roadmap-db NEWR keepme >/dev/null 2>&1
+check "architect.json byte-identical" 0 \
+  "$(cmp -s "$legacy" "$XDG_DATA_HOME/legacy.orig"; echo $?)"
+check "soong.json took the write" NEWR "$(jq -r '.keepme.roadmapDb' "$config")"
+
+# migration is idempotent: the second run sees soong.json and does nothing
+rm -f "$config" "$legacy"
+seed_legacy '{"idem":{"roadmapDb":"IR"}}'
+bash "$script" get idem >/dev/null 2>&1
+first="$(cat "$config")"
+bash "$script" get idem >/dev/null 2>&1
+check "second run is a no-op" "$first" "$(cat "$config")"
+
+# a corrupt legacy file is never copied forward: that would launder garbage into
+# soong.json and make the next read fail on the new name instead of the old one
+rm -f "$config" "$legacy"
+seed_legacy 'not json'
+check "corrupt legacy get exits 1"  1 "$(run get anything)"
+check "corrupt legacy wrote no soong.json" 1 "$([ -f "$config" ]; echo $?)"
+check "corrupt legacy set exits 1"  1 "$(run set --roadmap-db R anything)"
+check "corrupt legacy still no soong.json" 1 "$([ -f "$config" ]; echo $?)"
+check "corrupt legacy preserved" "not json" "$(cat "$legacy")"
+check "corrupt legacy left no temp file" 0 \
+  "$(find "$(dirname "$config")" -name '.soong.*' | wc -l | tr -d ' ')"
+
+# a parseable non-object legacy file is refused the same way
+rm -f "$config" "$legacy"
+seed_legacy '[1,2]'
+check "array legacy get exits 1" 1 "$(run get anything)"
+check "array legacy wrote no soong.json" 1 "$([ -f "$config" ]; echo $?)"
+rm -f "$legacy"
+
+# migration is not command-specific: it runs before the command resolves its
+# project, so it will cover the check command when that arrives. Verified here
+# through the one existing command that fails after migration would have run.
+rm -f "$config" "$legacy"
+seed_legacy '{"early":{"roadmapDb":"ER"}}'
+( cd / && bash "$script" get >/dev/null 2>&1 )
+check "migration ran before project resolution" ER "$(jq -r '.early.roadmapDb' "$config")"
+
+# usage and unknown commands never touch the config at all
+rm -f "$config" "$legacy"
+seed_legacy '{"untouched":{"roadmapDb":"UR"}}'
+bash "$script" --help >/dev/null 2>&1
+check "--help did not migrate" 1 "$([ -f "$config" ]; echo $?)"
+bash "$script" bogus >/dev/null 2>&1
+check "unknown command did not migrate" 1 "$([ -f "$config" ]; echo $?)"
+rm -f "$config" "$legacy"
+
+# the migrated file gets the same locked-down mode as a written one
+rm -f "$config" "$legacy"
+seed_legacy '{"perm":{"roadmapDb":"PR"}}'
+bash "$script" get perm >/dev/null 2>&1
+if mode="$(stat -f '%Lp' "$config" 2>/dev/null)"; then
+  check "migrated file is mode 600" 600 "$mode"
+else
+  echo "skip - migrated file mode check (stat -f unavailable)"
+fi
+rm -f "$config" "$legacy"
+
+# migration does not fire when soong.json already exists
+rm -f "$config" "$legacy"
+seed '{"only":{"roadmapDb":"NEW"}}'
+seed_legacy '{"only":{"roadmapDb":"OLD"},"ghost":{"roadmapDb":"GR"}}'
+bash "$script" get only >/dev/null 2>&1
+check "existing soong.json untouched" NEW "$(jq -r '.only.roadmapDb' "$config")"
+check "no key added from the legacy file" 1 \
+  "$(jq -e 'has("ghost")' "$config" >/dev/null 2>&1; echo $?)"
+rm -f "$config" "$legacy"
+
 # --- set merges, so one capability does not clobber another ------------------
 rm -f "$config"
 bash "$script" set --roadmap-db R --task-db T mergetest >/dev/null 2>&1
