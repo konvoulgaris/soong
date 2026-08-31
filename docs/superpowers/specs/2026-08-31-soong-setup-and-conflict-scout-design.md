@@ -102,6 +102,14 @@ entirely, rather than merging them. Merging two files whose keys overlap needs a
 precedence rule the user cannot see, and the situation only arises after a `set`,
 which wrote every key it knows.
 
+**Before the first `set`,** a repo configured under the old name keeps working:
+`architect` and `develop` read their Notion ids through the fallback. The scope
+rule is simply off there, because nothing ever wrote `requireScope` into
+`architect.json`, so `check commits` reports it missing and `pr-guard` fails open.
+That is the correct behavior and not an oversight — an unmigrated repo has never
+answered the scope question, so it lands in the absent state, exactly like a repo
+that was never configured at all.
+
 ### The capability table
 
 The script owns the mapping from capability to required keys.
@@ -366,8 +374,12 @@ ordered first because a hook must emit at most one JSON object, so a compound
 command that does two guarded things stops at the first.
 
 The commit branch goes **after** the pull request branch and **before** the
-comment branch. So `git commit -m "..." && gh pr create --title "..."` is judged
-on its title, not its commit subject. That ordering is a deliberate preference for
+comment branch. Textually that is after the pull request `case` block closes and
+before the `is_comment_cmd=0` assignment, because the comment branch's detection
+runs a `case` over the whole command string and then acts on the result.
+
+So `git commit -m "..." && gh pr create --title "..."` is judged on its title,
+not its commit subject. That ordering is a deliberate preference for
 the check that has always existed and applies to every repo over the one that is
 new and per-repo; a user whose compound command is denied for the title fixes the
 title and runs again, at which point the commit subject is checked on its own.
@@ -380,6 +392,18 @@ cannot check:
 * `git commit` with no `-m`, which opens an editor
 * `git commit -F <file>`, where the message is in a file
 * a message piped in through a heredoc
+
+It also reads the **wrong repo's** convention for a commit aimed somewhere else.
+`soong-setup.sh get` derives the project key from the hook process's working
+directory, so `git -C /other/repo commit -m ...`, or a `cd /other/repo && git
+commit` inside a compound command, is judged against the cwd repo's
+`requireScope` rather than the target's. That is a silently wrong answer rather
+than a fail-open one.
+
+It stays that way. Parsing `-C` and every `cd` in a compound command to work out
+which repository a commit will land in is a shell interpreter, and the wrong
+answer here costs a denial the user overrides by fixing the subject. Worth naming
+so it reads as a known limit.
 
 For those the guard advises rather than denies, and only when the `commits`
 capability is configured — an unconfigured repo hears nothing. It cannot deny
@@ -394,8 +418,20 @@ upgrade path.
 
 ### Tests
 
-`plugins/soong/hooks/scripts/pr-guard.test.sh` already covers this script and
-gains cases for:
+`plugins/soong/hooks/scripts/pr-guard.test.sh` needs a sandbox before it can hold
+any of the cases below. Today it sets no `XDG_DATA_HOME`, creates no repository,
+and does not control its working directory — it only pipes commands at the hook.
+Once the hook reads config, that suite would read whichever `soong.json` the
+developer running it happens to have, and every scope case would pass or fail by
+machine.
+
+So the suite first gains what `soong-setup.test.sh` already has: a `mktemp -d`
+`XDG_DATA_HOME`, exported, with a `trap` cleanup; a scratch `git init` repository
+to `cd` into, so the project key is a fixture name rather than the real checkout;
+and a helper that writes one of the three `requireScope` states before each case.
+That work comes before the first scope-rule test, not after.
+
+The suite then gains cases for:
 
 * each of the three states, on pull request titles, both denied and allowed
 * `true` and `false`, on `git commit -m`, both denied and allowed
@@ -511,7 +547,9 @@ cheap to read.
 After the configuration check, before brainstorming. Nothing has been spent yet,
 so this is the cheapest place in the skill to abandon.
 
-Dispatch `conflict-scout` with the user's request and the two database ids.
+Dispatch `conflict-scout` with the user's request and the two database ids. Those
+ids come from Step 1's second call, `get`, which is the only reason Step 1 reads
+them before anything needs them.
 
 Nothing found: say so in one line, continue to Step 2.
 
