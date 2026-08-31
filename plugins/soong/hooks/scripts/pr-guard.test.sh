@@ -4,6 +4,32 @@
 set -u
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/pr-guard.sh"
+
+# pr-guard reads the commit scope rule from soong.json. Without a pinned
+# XDG_DATA_HOME the suite would read the developer's own config and the scope
+# cases would pass or fail depending on whose machine ran them.
+XDG_DATA_HOME="$(mktemp -d)" || { echo "cannot create a temp dir" >&2; exit 1; }
+export XDG_DATA_HOME
+trap 'rm -rf "$XDG_DATA_HOME"' EXIT
+
+# The hook resolves its project key from git, so the suite needs a repo to sit
+# in that is not the checkout it was launched from.
+fixture="$XDG_DATA_HOME/repo"
+git init -q "$fixture" 2>/dev/null
+cd "$fixture" || { echo "cannot enter the fixture repo" >&2; exit 1; }
+project="repo"
+
+setup="$(cd "$(dirname "$HOOK")/../../skills/soong-setup/scripts" && pwd)/soong-setup.sh"
+
+# Put the repo in one of the three scope states. No argument clears it.
+scope_state() {
+  if [ -n "${1:-}" ]; then
+    bash "$setup" set --require-scope "$1" "$project" >/dev/null 2>&1
+  else
+    rm -f "$XDG_DATA_HOME/soong/soong.json"
+  fi
+}
+
 pass=0
 fail=0
 
@@ -182,6 +208,15 @@ do
     printf 'FAIL  invalid JSON for: %s\n' "$c"
   fi
 done
+
+# The hook finds soong-setup.sh relative to its own path. A directory move must
+# fail here rather than silently disabling the scope rule.
+if [ -f "$setup" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  soong-setup.sh not found at %s\n' "$setup"
+fi
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
