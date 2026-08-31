@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+#
+# Checks the subjects git and gh are about to write: PR titles, commit subjects,
+# and PR comment bodies.
+#
+# Named for the Conventional Commits rules, which are the bulk of it -- type,
+# optional scope, and the repo's own require-scope setting where one is
+# configured. It also carries one rule that is not part of that standard: PR
+# titles, bodies, and comments must not end in a generated-by footer or an
+# attribution tag. That rule lives here because this is the hook that already
+# sees those strings, not because it belongs to the same standard. Commit
+# subjects are exempt from it, since this project's instructions require a
+# co-authorship trailer on commits.
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 

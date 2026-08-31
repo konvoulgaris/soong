@@ -39,7 +39,7 @@ capability, configure that one alone.
 | Capability | Keys                                  | Used by                |
 | ---------- | ------------------------------------- | ---------------------- |
 | `notion`   | `roadmapDb`, `taskDb`, `taskTemplate` | `architect`, `develop` |
-| `commits`  | `requireScope`                        | the `pr-guard` hook    |
+| `commits`  | `requireScope`                        | the `conventional-commit-guard` hook    |
 
 `taskTemplate` is optional. Every other key is required by its capability.
 

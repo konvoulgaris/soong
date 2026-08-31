@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tests for pr-guard.sh. Run by hand: bash pr-guard.test.sh
+# Tests for conventional-commit-guard.sh. Run by hand: bash conventional-commit-guard.test.sh
 # Feeds hook JSON on stdin and asserts on stdout. Exits non-zero on any failure.
 set -u
 
-HOOK="$(cd "$(dirname "$0")" && pwd)/pr-guard.sh"
+HOOK="$(cd "$(dirname "$0")" && pwd)/conventional-commit-guard.sh"
 
-# pr-guard reads the commit scope rule from soong.json. Without a pinned
+# The guard reads the commit scope rule from soong.json. Without a pinned
 # XDG_DATA_HOME the suite would read the developer's own config and the scope
 # cases would pass or fail depending on whose machine ran them.
 XDG_DATA_HOME="$(mktemp -d)" || { echo "cannot create a temp dir" >&2; exit 1; }
@@ -288,7 +288,7 @@ scope_state
 # for a PR title. A timing assertion would be flaky; a call count is exact.
 lazy_root="$XDG_DATA_HOME/lazy"
 mkdir -p "$lazy_root/hooks/scripts" "$lazy_root/skills/soong-setup/scripts"
-cp "$HOOK" "$lazy_root/hooks/scripts/pr-guard.sh"
+cp "$HOOK" "$lazy_root/hooks/scripts/conventional-commit-guard.sh"
 calls="$lazy_root/calls.log"
 cat > "$lazy_root/skills/soong-setup/scripts/soong-setup.sh" <<EOF
 #!/usr/bin/env bash
@@ -300,7 +300,7 @@ EOF
 read_count() {
   : > "$calls"
   jq -Rs '{tool_input:{command:.}}' <<<"$1" \
-    | bash "$lazy_root/hooks/scripts/pr-guard.sh" >/dev/null 2>&1
+    | bash "$lazy_root/hooks/scripts/conventional-commit-guard.sh" >/dev/null 2>&1
   # No log file at all is zero reads, not an error.
   [ -f "$calls" ] && wc -l < "$calls" | tr -d ' ' || printf '0'
 }
