@@ -32,7 +32,7 @@ check "set exits 0" 0 "$(run set --roadmap-db R1 --task-db T1 demo)"
 rec="$(bash "$script" get demo)"
 check "roadmapDb stored"           R1   "$(jq -r .roadmapDb   <<<"$rec")"
 check "taskDb stored"              T1   "$(jq -r .taskDb      <<<"$rec")"
-check "template null when omitted" null "$(jq -r .taskTemplate <<<"$rec")"
+check "template absent when omitted" false "$(bash "$script" get demo | jq -r 'has("taskTemplate")')"
 
 # template is optional but persisted when given
 bash "$script" set --roadmap-db R2 --task-db T2 --task-template TPL demo >/dev/null 2>&1
@@ -57,11 +57,6 @@ check "first project intact" R2 "$(bash "$script" get demo  | jq -r .roadmapDb)"
 seed '{"falsy":false}'
 check "stored false is found" 0 "$(run get falsy)"
 check "stored false is echoed" false "$(bash "$script" get falsy)"
-
-# missing required flags are rejected, not silently defaulted
-check "missing --roadmap-db exits 2" 2 "$(run set --task-db T only-task)"
-check "missing --task-db exits 2"    2 "$(run set --roadmap-db R only-roadmap)"
-check "rejected set wrote nothing"   3 "$(run get only-task)"
 
 # a flag given where a value belongs is an error, not a stored database id
 check "flag as value exits 2" 2 "$(run set --roadmap-db --task-db T2 proj)"
@@ -151,6 +146,45 @@ bash "$script" set --roadmap-db NEWR --task-db NEWT migrate >/dev/null 2>&1
 check "set wrote soong.json"       NEWR "$(jq -r '.migrate.roadmapDb' "$config")"
 check "set left architect.json be" OLD  "$(jq -r '.migrate.roadmapDb' "$legacy")"
 rm -f "$legacy"
+
+# --- set merges, so one capability does not clobber another ------------------
+rm -f "$config"
+bash "$script" set --roadmap-db R --task-db T mergetest >/dev/null 2>&1
+bash "$script" set --require-scope true mergetest >/dev/null 2>&1
+rec="$(bash "$script" get mergetest)"
+check "scope stored alone"      true "$(jq -r .requireScope <<<"$rec")"
+check "notion keys survived"    R    "$(jq -r .roadmapDb    <<<"$rec")"
+
+bash "$script" set --roadmap-db R2 mergetest >/dev/null 2>&1
+rec="$(bash "$script" get mergetest)"
+check "notion key updated"      R2   "$(jq -r .roadmapDb    <<<"$rec")"
+check "scope survived a notion set" true "$(jq -r .requireScope <<<"$rec")"
+check "taskDb survived a partial set" T "$(jq -r .taskDb     <<<"$rec")"
+
+# --require-scope takes true or false only
+check "require-scope false ok"  0 "$(run set --require-scope false scopetest)"
+check "require-scope stored"    false "$(bash "$script" get scopetest | jq -r .requireScope)"
+check "require-scope yes fails" 2 "$(run set --require-scope yes badscope)"
+check "require-scope 1 fails"   2 "$(run set --require-scope 1 badscope)"
+check "bad require-scope wrote nothing" 3 "$(run get badscope)"
+
+# set with no flags at all is a usage error, not a no-op write
+check "set with no flags exits 2" 2 "$(run set noflags)"
+check "set with no flags wrote nothing" 3 "$(run get noflags)"
+
+# a partial set on a repo that does not exist yet still creates it
+check "partial set creates" 0 "$(run set --task-db ONLYT newrepo)"
+check "partial set stored"  ONLYT "$(bash "$script" get newrepo | jq -r .taskDb)"
+check "unset key is absent" false "$(bash "$script" get newrepo | jq -r 'has("roadmapDb")')"
+
+# merging into a non-object record fails loudly rather than silently replacing
+# it: a scalar under a project key is a hand-corrupted config, so exit 1 and
+# leave the file alone. The old replace-everything set used to overwrite it.
+seed '{"scalar":"oops"}'
+check "merge into a scalar exits 1" 1 "$(run set --task-db T scalar)"
+check "scalar record preserved" '{"scalar":"oops"}' "$(cat "$config")"
+check "failed merge left no temp file" 0 \
+  "$(find "$(dirname "$config")" -name '.soong.*' | wc -l | tr -d ' ')"
 
 echo
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }

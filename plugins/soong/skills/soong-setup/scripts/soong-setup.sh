@@ -2,10 +2,15 @@
 # Read or write soong's per-repo configuration.
 #
 #   soong-setup.sh get [project]
-#   soong-setup.sh set --roadmap-db ID --task-db ID [--task-template ID] [project]
+#   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
+#                     [--require-scope true|false] [project]
 #
 # Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
-# Shape:  { "<project>": { roadmapDb, taskDb, taskTemplate, updatedAt } }
+# Shape:  { "<project>": { roadmapDb, taskDb, taskTemplate, requireScope,
+#                          updatedAt } }
+#
+# set merges into the existing record: it writes only the keys it was given, so
+# configuring one capability never clears another. At least one flag is needed.
 #
 # Exit codes, so a caller can branch:
 #   0  ok
@@ -21,10 +26,12 @@ usage() {
 Read or write soong's per-repo configuration.
 
   soong-setup.sh get [project]
-  soong-setup.sh set --roadmap-db ID --task-db ID [--task-template ID] [project]
+  soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
+                    [--require-scope true|false] [project]
 
 Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 get exits 3 when the project has no mapping, so a caller can branch on it.
+set merges: it writes only the keys you pass, and needs at least one flag.
 EOF
 }
 
@@ -91,22 +98,36 @@ case "$cmd" in
     ;;
 
   set)
-    roadmap=""; task=""; template=""; project=""; have_project=0
+    roadmap=""; task=""; template=""; template_seen=0; scope=""
+    project=""; have_project=0
     while [ $# -gt 0 ]; do
       case "$1" in
-        --roadmap-db|--task-db|--task-template)
+        --roadmap-db|--task-db|--task-template|--require-scope)
           flag="$1"; shift
           [ $# -gt 0 ] || die "$flag needs a value" 2
           case "$1" in -*) die "$flag needs a value, got '$1'" 2 ;; esac
           case "$flag" in
             --roadmap-db) roadmap="$1" ;;
             --task-db) task="$1" ;;
-            --task-template) template="$1" ;;
+            --task-template) template="$1"; template_seen=1 ;;
+            --require-scope)
+              case "$1" in
+                true|false) scope="$1" ;;
+                *) die "--require-scope takes true or false, got '$1'" 2 ;;
+              esac
+              ;;
           esac
           ;;
         --roadmap-db=*)    roadmap="${1#--roadmap-db=}" ;;
         --task-db=*)       task="${1#--task-db=}" ;;
-        --task-template=*) template="${1#--task-template=}" ;;
+        --task-template=*) template="${1#--task-template=}"; template_seen=1 ;;
+        --require-scope=*)
+          scope="${1#--require-scope=}"
+          case "$scope" in
+            true|false) ;;
+            *) die "--require-scope takes true or false, got '$scope'" 2 ;;
+          esac
+          ;;
         -*) die "unknown flag: $1" 2 ;;
         *)
           [ "$have_project" -eq 0 ] || die "unexpected extra argument: $1" 2
@@ -116,8 +137,11 @@ case "$cmd" in
       shift
     done
 
-    [ -n "$roadmap" ] || die "--roadmap-db is required" 2
-    [ -n "$task" ]    || die "--task-db is required" 2
+    # No flag is individually required any more: a repo may configure the
+    # commits capability without ever supplying a Notion database. But a set
+    # with nothing to set is a usage error, not a no-op write.
+    [ -n "$roadmap$task$template$scope" ] || [ "$template_seen" -eq 1 ] \
+      || die "set needs at least one flag" 2
 
     command -v jq >/dev/null || die "jq is required"
     project="$(resolve_project "$project")" || exit $?
@@ -133,13 +157,16 @@ case "$cmd" in
     trap 'rm -f "$tmp"' EXIT
 
     jq --arg p "$project" --arg r "$roadmap" --arg k "$task" --arg tpl "$template" \
+       --arg scope "$scope" --argjson tplseen "$template_seen" \
        --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-       '.[$p] = {
-          roadmapDb: $r,
-          taskDb: $k,
-          taskTemplate: (if ($tpl | length) > 0 then $tpl else null end),
-          updatedAt: $t
-        }' "$file" > "$tmp" || die "failed to build the new config"
+       '(.[$p] //= {})
+        | (if ($r | length) > 0 then .[$p].roadmapDb = $r else . end)
+        | (if ($k | length) > 0 then .[$p].taskDb    = $k else . end)
+        | (if $tplseen == 1
+           then .[$p].taskTemplate = (if ($tpl | length) > 0 then $tpl else null end)
+           else . end)
+        | (if ($scope | length) > 0 then .[$p].requireScope = ($scope == "true") else . end)
+        | .[$p].updatedAt = $t' "$file" > "$tmp" || die "failed to build the new config"
     chmod 600 "$tmp" 2>/dev/null || true
     mv "$tmp" "$file" || die "failed to write $file"
     trap - EXIT
