@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via soong-setup first.
+description: Turn a feature request into a reviewed spec on a Notion roadmap item plus one Notion task per stacked PR, then print the /develop command that implements it. Checks first whether the roadmap already holds overlapping work, and stops without writing anything if the user decides the request duplicates it. Use when the user runs /architect, or asks to plan, architect, or spec out a feature that should land as a stack of PRs on Notion. Requires the repo to be configured via soong-setup first.
 ---
 
 # architect
@@ -16,6 +16,10 @@ This skill plans. It does not implement.
 
 - The `superpowers` plugin (`superpowers:brainstorming`).
 - The `conflict-scout` agent, which queries Notion for overlapping work.
+- The `architect-cobrain` agent, which reviews the spec at Step 3.
+- The `adversarial-council` skill, which filters cobrain's findings at Step 3.5.
+- The `soong-setup` skill, which Step 1 sends the user to when the repo is not
+  configured for Notion.
 - The Notion MCP.
 
 ## Step 1: Check configuration
