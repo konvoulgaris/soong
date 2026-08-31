@@ -435,6 +435,20 @@ git commit -m "feat(soong-setup): merge on set and add --require-scope
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
+### Task 3b: Migrate architect.json forward on first use
+
+Added during execution, after Task 3 exposed a data-loss path the plan had missed. Recorded here so the plan matches what was built.
+
+**The bug.** Task 2's read fallback plus Task 3's merging `set` combine badly on an unmigrated repo. `set --require-scope true` writes a fresh `soong.json` holding only `requireScope`; the Notion ids stay in `architect.json` but become unreachable, because a present `soong.json` makes the legacy file invisible. A repo configured for months reads as unconfigured.
+
+**The fix.** A `migrate_legacy()` function, called from every config-touching command right after the `jq` check and before `resolve_project`, so it is command-agnostic and a later `check` inherits it. When `soong.json` is absent and `architect.json` is present, copy the whole file forward verbatim — every project, no key added or dropped — through the same `mktemp`-then-`mv` pattern `set` uses, with `chmod 600` on the file and `700` on the directory.
+
+A corrupt or non-object `architect.json` is refused: exit 1 naming the file, and no `soong.json` created. `architect.json` is never written and never deleted.
+
+`read_file()` stays. Its legacy branch is now reachable only when migration declined, which is exactly the corrupt-file case — and it matters there, because without it a read would exit 3 and send the user into setup, which refuses to overwrite a corrupt file. That is a deadlock; the fallback turns it into a named error.
+
+25 tests were added, taking the suite from 66 to 91.
+
 ### Task 4: Add the `check` command and the capability table
 
 **Files:**

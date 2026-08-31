@@ -88,27 +88,49 @@ file would duplicate that knowledge and lengthen every `jq` path.
 
 ### Migrating from architect.json
 
-`get` and `check` read `soong.json`. When `soong.json` does not exist and
-`architect.json` does, they read `architect.json` instead. No copy, no prompt, no
-migration step the user has to run.
+**When `soong.json` does not exist and `architect.json` does, the whole file is
+copied forward, once, before any command acts on it.** Every project carries
+over, not just the one being read or written. The copy is verbatim: no key is
+added, transformed, or dropped. It runs before project resolution, so it is
+command-agnostic — `get`, `check`, and `set` all get it for free.
 
-`set` always writes `soong.json`. So the first `set` after this change
-effectively migrates the repo, and `architect.json` becomes dead once every
-configured repo has been written once. The fallback is read-only and one
-direction: nothing writes back to `architect.json`.
+A corrupt or non-object `architect.json` is never copied. It reports exit 1 by
+name, and `soong.json` is not created, so a bad file cannot be laundered into the
+new name.
+
+`architect.json` is never written to and never deleted. It stays on disk,
+byte-identical, as a backup.
+
+The read fallback in `read_file()` survives this, for one remaining case: a
+legacy file too corrupt to migrate. Without it, a read would report "no mapping"
+and exit 3, sending the user into setup, which then refuses to overwrite the
+corrupt file — a deadlock. With it, the read names the broken file and exits 1.
+
+### Why the copy is the whole file, not one project
+
+An earlier design seeded nothing and relied on the read fallback alone, with
+`set` writing only the keys it was given. That loses data. A repo configured
+before the rename, whose owner answers only the `commits` question, gets a fresh
+`soong.json` holding `requireScope` and nothing else; the Notion ids are still in
+`architect.json` but unreachable, because the no-merge rule below means a present
+`soong.json` makes the legacy file invisible. `/architect` would then report the
+repo unconfigured, having been configured for months.
+
+Migrating the file up front removes that whole class of failure, and it removes
+it for every project at once rather than one `set` at a time.
 
 A repo with both files present reads `soong.json` and ignores `architect.json`
 entirely, rather than merging them. Merging two files whose keys overlap needs a
-precedence rule the user cannot see, and the situation only arises after a `set`,
-which wrote every key it knows.
+precedence rule the user cannot see. Migration is gated on `soong.json` being
+absent, so the two rules do not fight: the copy happens once, and after that the
+legacy file is inert.
 
-**Before the first `set`,** a repo configured under the old name keeps working:
-`architect` and `develop` read their Notion ids through the fallback. The scope
-rule is simply off there, because nothing ever wrote `requireScope` into
-`architect.json`, so `check commits` reports it missing and `pr-guard` fails open.
-That is the correct behavior and not an oversight — an unmigrated repo has never
-answered the scope question, so it lands in the absent state, exactly like a repo
-that was never configured at all.
+**A migrated repo keeps its Notion configuration and gains no scope rule.**
+`requireScope` was never a key `architect.json` held, so it arrives absent, which
+is the not-enforced state. `check commits` reports it missing and `pr-guard` fails
+open until the user answers the question. That is correct rather than an
+oversight: a repo configured before the rename has never been asked, so it lands
+in the same state as a repo that was never configured at all.
 
 ### The capability table
 
