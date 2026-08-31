@@ -504,12 +504,22 @@ description: <one line, ending in the read-only claim>
 model: sonnet
 ```
 
-**No `tools` key.** Neither `architect-cobrain` nor `adversarial-judge` declares
-one, and Notion MCP tool names carry a per-installation identifier
-(`mcp__<uuid>__notion-*`), so a literal list would be wrong on every machine but
-the one it was written on. The agent inherits the session's tools, including the
-Notion MCP, and the read-only constraint is stated in prose in the agent body,
-exactly as the other two agents state theirs.
+**No `tools` key** — and this diverges from the other two agents rather than
+matching them. `architect-cobrain` and `adversarial-judge` both pin
+`tools: Read, Grep, Glob, Bash`, which is right for them: both are deliberately
+barred from Notion, so a closed list is the enforcement.
+
+`conflict-scout` cannot copy that. Querying Notion is its entire job, and a Notion
+MCP tool name carries a per-installation id (`mcp__<uuid>__notion-*`) — the same
+unportability this repo already works around in `hooks.json`, which matches those
+tools with a `mcp__.*__notion-...` wildcard. A frontmatter `tools:` list has no
+such wildcard, so a literal name would be correct on one machine and wrong on
+every other.
+
+So the key is omitted, which inherits the session's tools, MCP included, and the
+read-only constraint is carried in prose in the agent body. The agent says this
+about itself, so the omission does not read as an oversight to the next person who
+compares the three files.
 
 `model: sonnet` sits alongside the existing `fable` and `opus`, so this is the
 third tier the plugin uses rather than a new convention.

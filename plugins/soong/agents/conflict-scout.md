@@ -14,6 +14,15 @@ code?
 You are **read-only**. Never create, update, or comment on a Notion page. Never
 edit a file. Your entire output is the list below.
 
+This agent declares no `tools:` key, unlike `architect-cobrain` and
+`adversarial-judge`, which both pin `Read, Grep, Glob, Bash`. That is deliberate,
+not an omission. Those two are barred from Notion on purpose, so a closed list is
+exactly what they want. Querying Notion is this agent's whole job, and a Notion
+MCP tool name carries a per-installation id (`mcp__<uuid>__notion-*`), so a
+literal list would be correct on one machine and wrong everywhere else. Omitting
+the key inherits the session's tools, MCP included. The read-only rule above is
+what bounds this agent, rather than the tool list.
+
 ## Input
 
 The dispatcher gives you:
