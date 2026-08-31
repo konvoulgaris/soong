@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Take a Notion roadmap item and build its whole task stack as stacked pull requests, one pull request per task, asking any questions the task cards leave open before writing code. Use when the user runs /develop, or asks to implement a roadmap item, build out a stack of tasks, or start development on an architected feature. Requires the repo to be configured via architect-setup first.
+description: Take a Notion roadmap item and build its whole task stack as stacked pull requests, one pull request per task, asking any questions the task cards leave open before writing code. Use when the user runs /develop, or asks to implement a roadmap item, build out a stack of tasks, or start development on an architected feature. Requires the repo to be configured via soong-setup first.
 ---
 
 # develop
@@ -18,7 +18,7 @@ The user answers questions once, up front. Then the stack builds unattended.
 - The `superpowers` plugin (`writing-plans`, `subagent-driven-development`).
 - The `manage-pr` skill, with `--base`, `--notion-card`, and `--draft`.
 - The Notion MCP.
-- The repo configured via `architect-setup`.
+- The repo configured via `soong-setup`.
 
 ## Arguments
 
@@ -71,12 +71,15 @@ earlier step can stop for free.
 1. **Check configuration.** Run the same script `architect` Step 1 runs:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/architect-setup/scripts/architect-setup.sh" get
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check notion
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
    ```
 
-   Exit 0 continues. Exit 3 means this repo is unconfigured: invoke
-   `architect-setup`, then run `get` again and stop on anything non-zero. Exit 1
-   is a corrupt config, exit 2 is not a git repository. Both stop.
+   `check notion` exit 0 continues to `get`, which reads the ids. Exit 3 means
+   this repo is not configured for Notion: invoke `soong-setup`, then run
+   `check notion` again and stop on anything non-zero. Exit 1 is a corrupt
+   config, exit 2 is not a git repository. Both stop. A non-zero `get` after a
+   clean `check` is a bug: report it and stop.
 
    Confirm the Notion MCP is reachable in this step, rather than finding out at
    task 4 that the stack has nowhere to report.
@@ -439,7 +442,7 @@ Two things the ledger deliberately does not do:
 
 | Failure | Behavior |
 | --- | --- |
-| Repo unconfigured, exit 3 | Invoke `architect-setup`, re-check, stop on non-zero |
+| Repo unconfigured, exit 3 | Invoke `soong-setup`, re-check, stop on non-zero |
 | Notion MCP unreachable | Stop at startup. No worktree, no branch, no ledger |
 | Roadmap list and task query disagree on count or mapping | Stop, show both, ask. Nothing created |
 | A `--skip` title matching no task or several | Stop. Nothing created |
