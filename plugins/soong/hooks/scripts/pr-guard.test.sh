@@ -218,5 +218,28 @@ else
   printf 'FAIL  soong-setup.sh not found at %s\n' "$setup"
 fi
 
+# --- scope rule on PR titles ------------------------------------------------
+scope_state true
+check deny   'scoped required, none given'   'gh pr create --title "feat: thing"'
+check advise 'scoped required, one given'    'gh pr create --title "feat(api): thing"'
+check deny   'scoped required, placeholder'  'gh pr create --title "feat(*): thing"'
+
+scope_state false
+check deny   'scope forbidden, one given'    'gh pr create --title "feat(api): thing"'
+check advise 'scope forbidden, none given'   'gh pr create --title "feat: thing"'
+
+scope_state
+check advise 'unset allows a scope'          'gh pr create --title "feat(api): thing"'
+check advise 'unset allows no scope'         'gh pr create --title "feat: thing"'
+check deny   'unset still denies placeholder' 'gh pr create --title "feat(misc): thing"'
+check deny   'unset still denies bad shape'  'gh pr create --title "thing"'
+
+# a corrupt config must not enforce a scope rule, and must not break the guard
+mkdir -p "$XDG_DATA_HOME/soong"
+printf 'not json' > "$XDG_DATA_HOME/soong/soong.json"
+check advise 'corrupt config falls open'     'gh pr create --title "feat: thing"'
+check deny   'corrupt config still checks shape' 'gh pr create --title "thing"'
+scope_state
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

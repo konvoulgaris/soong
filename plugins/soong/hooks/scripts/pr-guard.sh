@@ -2,6 +2,34 @@
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
+# The repo's Conventional Commits scope rule: "true", "false", or empty for
+# "not configured". Read through soong-setup.sh so the project-key derivation
+# lives in exactly one place.
+#
+# Resolved from $0 rather than CLAUDE_PLUGIN_ROOT: no hook script here uses that
+# variable, and it is set for the hook command rather than guaranteed inside this
+# subprocess. Depending on it would fail silently, because the fail-open rule
+# below turns a failed read into "no scope rule" — a feature that looks like it
+# works while enforcing nothing.
+require_scope=""
+setup_sh="$(cd "$(dirname "$0")/../../skills/soong-setup/scripts" 2>/dev/null && pwd)/soong-setup.sh"
+if [ -f "$setup_sh" ] && command -v jq >/dev/null 2>&1; then
+  # Fail open on everything: a missing config, a corrupt one, a non-repo cwd, a
+  # missing jq. A guard that dies loudly on every Bash call because a config file
+  # got corrupted is worse than one that quietly stops checking scope.
+  require_scope="$(bash "$setup_sh" get 2>/dev/null \
+    | jq -r 'if type == "object" and has("requireScope")
+             then (.requireScope | tostring) else "" end' 2>/dev/null)"
+  case "$require_scope" in true|false) ;; *) require_scope="" ;; esac
+fi
+
+# Does a Conventional Commits subject carry a scope? Kept separate from the shape
+# check so the shape rule stays in one place and this only answers the one
+# question.
+has_scope() {
+  printf '%s' "$1" | grep -qE '^[a-z]+\([^)]*\)!?:'
+}
+
 # Marker class: list/rule markers, blockquote, em-dash, whitespace, robot emoji.
 # Applied symmetrically so markdown italics (*sig*) cannot slip past the anchor.
 M='[-*_~>—[:space:]🤖]*'
@@ -67,6 +95,12 @@ case "$cmd" in
         reasons+=("Do not use a placeholder or wildcard scope like 'feat(*):' or 'feat(misc):'. When no meaningful area applies, omit the scope entirely and write a plain 'feat:'. Got: \"$title\"")
       elif ! printf '%s' "$title" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9./-]+(,[a-z0-9./-]+)*\))?!?: .+'; then
         reasons+=("Title must follow Conventional Commits with optional scope, e.g. 'feat(scope): summary'. An optional Notion ticket id may be appended as a suffix. Got: \"$title\"")
+      fi
+
+      if [ "$require_scope" = "true" ] && ! has_scope "$title"; then
+        reasons+=("This repo requires a scope on PR titles. Write 'feat(scope): summary'. Got: \"$title\"")
+      elif [ "$require_scope" = "false" ] && has_scope "$title"; then
+        reasons+=("This repo does not use scopes on PR titles. Write 'feat: summary'. Got: \"$title\"")
       fi
     fi
 
