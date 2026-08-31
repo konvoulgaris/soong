@@ -137,6 +137,78 @@ case "$cmd" in
     ;;
 esac
 
+# Branch 1.5: commit subjects. Gated entirely on the commits capability, so an
+# unconfigured repo is untouched. Without that gate, installing this plugin would
+# start denying `git commit -m "wip"` in every repo the user never set up, and
+# commits are far higher-frequency than PR titles.
+#
+# The case is outside and the scope_rule call inside, not the other way round: a
+# `require_scope=$(scope_rule)` at top level runs in a subshell, so the memo
+# cache never reaches this branch and `ls` would pay for the config read anyway.
+case "$cmd" in
+  *"git commit"*)
+    require_scope="$(scope_rule)"
+    if [ -n "$require_scope" ]; then
+      # Generated and reused subjects are exempt. git writes "fixup!"/"squash!"
+      # itself and a later rebase absorbs them, and --amend with no -m reuses a
+      # message that is not in this command. Denying either would break the
+      # stacked-PR workflow develop builds.
+      exempt=0
+      printf '%s' "$cmd" | grep -qE -- '--(fixup|squash)(=|[[:space:]])' && exempt=1
+      if printf '%s' "$cmd" | grep -qE -- '--amend' \
+         && ! printf '%s' "$cmd" | grep -qE -- '(-m|--message)[[:space:]=]'; then
+        exempt=1
+      fi
+
+      if [ "$exempt" -eq 0 ]; then
+        # The first -m is the subject; later ones are body paragraphs.
+        subject=$(printf '%s' "$cmd" \
+          | grep -oE -- '(-m|--message)[ =]+("[^"]*"|'"'"'[^'"'"']*'"'"')' \
+          | head -1 | sed -E 's/^(-m|--message)[ =]+//; s/^["'"'"']//; s/["'"'"']$//')
+
+        if [ -n "$subject" ]; then
+          creasons=()
+
+          if printf '%s' "$subject" | grep -qiE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\((\*|misc|placeholder|tbd|na|n/a)\)'; then
+            creasons+=("Do not use a placeholder or wildcard scope. Got: \"$subject\"")
+          elif ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9./-]+(,[a-z0-9./-]+)*\))?!?: .+'; then
+            creasons+=("Commit subject must follow Conventional Commits, e.g. 'feat(scope): summary'. Got: \"$subject\"")
+          fi
+
+          if [ "$require_scope" = "true" ] && ! has_scope "$subject"; then
+            creasons+=("This repo requires a scope on commit subjects. Write 'feat(scope): summary'. Got: \"$subject\"")
+          elif [ "$require_scope" = "false" ] && has_scope "$subject"; then
+            creasons+=("This repo does not use scopes on commit subjects. Write 'feat: summary'. Got: \"$subject\"")
+          fi
+
+          # No generated-by footer check here, unlike the PR branches. CLAUDE.md
+          # requires a Co-Authored-By trailer on commits, so applying the PR
+          # footer rule would deny what the project requires.
+
+          if [ ${#creasons[@]} -gt 0 ]; then
+            deny "$(join_reasons "${creasons[@]}") Fix the commit subject and retry."
+          fi
+        fi
+      fi
+
+      # Outside the exempt guard on purpose. An exempted commit -- an amend, a
+      # fixup, a message this hook cannot read -- still gets the reminder, because
+      # the repo does have a convention and only this subject is unjudgeable.
+      # Putting this inside the guard would make every exempt case silent.
+      #
+      # ponytail: -m only, and cwd only. A message in an editor, in -F <file>, or
+      # piped via a heredoc is not in the command string, so it cannot be read and
+      # must not be denied unread. And the project key comes from the cwd, so
+      # `git -C /other/repo commit` is judged against this repo's rule rather than
+      # the target's -- working that out means parsing -C and every cd in a
+      # compound command, which is a shell interpreter. Upgrade path for both: a
+      # per-repo commit-msg git hook, which brings its own install, upgrade, and
+      # removal problems.
+      advise "Commit subjects in this repo follow Conventional Commits, and the repo's scope rule is require_scope=$require_scope."
+    fi
+    ;;
+esac
+
 # Branch 2: comment-posting commands, in two arms.
 #
 # Arm 1 -- gh pr comment / gh pr review -- matches unconditionally. Those take

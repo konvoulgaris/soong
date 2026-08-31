@@ -198,6 +198,7 @@ for c in \
   'gh pr create --title "nope" --body "y"' \
   "gh pr comment 5 -b 'Fixed it.'" \
   "gh pr comment 5 -b 'Addressed by Claude Code'" \
+  'git commit -m "feat(api): thing"' \
   'git status'
 do
   out=$(run "$c")
@@ -239,6 +240,43 @@ mkdir -p "$XDG_DATA_HOME/soong"
 printf 'not json' > "$XDG_DATA_HOME/soong/soong.json"
 check advise 'corrupt config falls open'     'gh pr create --title "feat: thing"'
 check deny   'corrupt config still checks shape' 'gh pr create --title "thing"'
+scope_state
+
+# --- commit subjects --------------------------------------------------------
+# The whole branch is gated on the commits capability. An unconfigured repo hears
+# nothing at all, including on shape, because commits are far higher-frequency
+# than PR titles and a new universal denial on them is the more damaging one.
+scope_state
+check silent 'unset ignores a bad commit'  'git commit -m "wip"'
+check silent 'unset ignores a good commit' 'git commit -m "feat(api): thing"'
+
+scope_state true
+check deny   'commit needs a scope'        'git commit -m "feat: thing"'
+check advise 'commit has a scope'          'git commit -m "feat(api): thing"'
+check deny   'commit shape is checked'     'git commit -m "wip"'
+
+scope_state false
+check deny   'commit must not be scoped'   'git commit -m "feat(api): thing"'
+check advise 'commit is unscoped'          'git commit -m "feat: thing"'
+
+# a Co-Authored-By trailer is required by CLAUDE.md, so it must stay legal
+scope_state true
+check advise 'trailer is allowed' 'git commit -m "feat(api): thing" -m "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"'
+
+# the first -m is the subject; later ones are body paragraphs
+check advise 'later -m is not the subject' 'git commit -m "feat(api): thing" -m "wip notes"'
+
+# messages the hook cannot read: advise, never deny
+check advise 'no -m at all'   'git commit'
+check advise 'message in a file' 'git commit -F /tmp/msg'
+check advise 'amend without -m'  'git commit --amend --no-edit'
+
+# git generates these subjects and a later rebase absorbs them
+check advise 'fixup is exempt'  'git commit --fixup=HEAD'
+check advise 'squash is exempt' 'git commit --squash=HEAD'
+
+# the PR branch is ordered first, so a compound command stops there
+check deny 'compound stops at the PR title' 'git commit -m "feat(api): ok" && gh pr create --title "bad"'
 scope_state
 
 # --- the scope-rule read is lazy -------------------------------------------
