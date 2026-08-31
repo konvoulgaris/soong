@@ -6,22 +6,41 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 # "not configured". Read through soong-setup.sh so the project-key derivation
 # lives in exactly one place.
 #
-# Resolved from $0 rather than CLAUDE_PLUGIN_ROOT: no hook script here uses that
-# variable, and it is set for the hook command rather than guaranteed inside this
-# subprocess. Depending on it would fail silently, because the fail-open rule
-# below turns a failed read into "no scope rule" — a feature that looks like it
-# works while enforcing nothing.
-require_scope=""
-setup_sh="$(cd "$(dirname "$0")/../../skills/soong-setup/scripts" 2>/dev/null && pwd)/soong-setup.sh"
-if [ -f "$setup_sh" ] && command -v jq >/dev/null 2>&1; then
-  # Fail open on everything: a missing config, a corrupt one, a non-repo cwd, a
-  # missing jq. A guard that dies loudly on every Bash call because a config file
-  # got corrupted is worse than one that quietly stops checking scope.
-  require_scope="$(bash "$setup_sh" get 2>/dev/null \
-    | jq -r 'if type == "object" and has("requireScope")
-             then (.requireScope | tostring) else "" end' 2>/dev/null)"
-  case "$require_scope" in true|false) ;; *) require_scope="" ;; esac
-fi
+# Lazy and memoized on purpose. This hook is a PreToolUse hook on every Bash
+# call, so an unconditional read here charges three extra processes (soong-setup,
+# its internal git rev-parse, and jq) to `ls` and every other command no branch
+# below cares about. Measured over 20 invocations of `ls`, three runs each:
+# 93-96 ms per call with the read unconditional, 28-36 ms with it deferred to the
+# branches that need it — roughly a third of the cost.
+# The PR branches pay the read exactly once, because the result is cached.
+#
+# _scope_loaded is a separate flag rather than a test on the value: the empty
+# string is the legitimate cached answer for "not configured", so testing
+# emptiness would re-read on every call in the common case.
+_scope_rule=""
+_scope_loaded=""
+scope_rule() {
+  if [ -z "$_scope_loaded" ]; then
+    _scope_loaded=1
+    # Resolved from $0 rather than CLAUDE_PLUGIN_ROOT: no hook script here uses
+    # that variable, and it is set for the hook command rather than guaranteed
+    # inside this subprocess. Depending on it would fail silently, because the
+    # fail-open rule below turns a failed read into "no scope rule" — a feature
+    # that looks like it works while enforcing nothing.
+    local setup_sh
+    setup_sh="$(cd "$(dirname "$0")/../../skills/soong-setup/scripts" 2>/dev/null && pwd)/soong-setup.sh"
+    if [ -f "$setup_sh" ] && command -v jq >/dev/null 2>&1; then
+      # Fail open on everything: a missing config, a corrupt one, a non-repo cwd,
+      # a missing jq. A guard that dies loudly on every Bash call because a config
+      # file got corrupted is worse than one that quietly stops checking scope.
+      _scope_rule="$(bash "$setup_sh" get 2>/dev/null \
+        | jq -r 'if type == "object" and has("requireScope")
+                 then (.requireScope | tostring) else "" end' 2>/dev/null)"
+      case "$_scope_rule" in true|false) ;; *) _scope_rule="" ;; esac
+    fi
+  fi
+  printf '%s' "$_scope_rule"
+}
 
 # Does a Conventional Commits subject carry a scope? Kept separate from the shape
 # check so the shape rule stays in one place and this only answers the one
@@ -97,6 +116,8 @@ case "$cmd" in
         reasons+=("Title must follow Conventional Commits with optional scope, e.g. 'feat(scope): summary'. An optional Notion ticket id may be appended as a suffix. Got: \"$title\"")
       fi
 
+      # Called once into a variable, not twice: one command, one config read.
+      require_scope=$(scope_rule)
       if [ "$require_scope" = "true" ] && ! has_scope "$title"; then
         reasons+=("This repo requires a scope on PR titles. Write 'feat(scope): summary'. Got: \"$title\"")
       elif [ "$require_scope" = "false" ] && has_scope "$title"; then

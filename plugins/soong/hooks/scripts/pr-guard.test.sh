@@ -241,5 +241,49 @@ check advise 'corrupt config falls open'     'gh pr create --title "feat: thing"
 check deny   'corrupt config still checks shape' 'gh pr create --title "thing"'
 scope_state
 
+# --- the scope-rule read is lazy -------------------------------------------
+# This hook runs on every Bash call, so reading the config unconditionally costs
+# every unrelated command three processes. Guard that by counting the reads
+# instead of timing them: copy the hook into a fake plugin tree whose
+# $0-relative soong-setup.sh is a wrapper that appends a line per invocation,
+# then assert the log is empty for a command no branch cares about and non-empty
+# for a PR title. A timing assertion would be flaky; a call count is exact.
+lazy_root="$XDG_DATA_HOME/lazy"
+mkdir -p "$lazy_root/hooks/scripts" "$lazy_root/skills/soong-setup/scripts"
+cp "$HOOK" "$lazy_root/hooks/scripts/pr-guard.sh"
+calls="$lazy_root/calls.log"
+cat > "$lazy_root/skills/soong-setup/scripts/soong-setup.sh" <<EOF
+#!/usr/bin/env bash
+printf 'call\n' >> "$calls"
+exec bash "$setup" "\$@"
+EOF
+
+# Count the reads one command makes, via the recording copy of the hook.
+read_count() {
+  : > "$calls"
+  jq -Rs '{tool_input:{command:.}}' <<<"$1" \
+    | bash "$lazy_root/hooks/scripts/pr-guard.sh" >/dev/null 2>&1
+  # No log file at all is zero reads, not an error.
+  [ -f "$calls" ] && wc -l < "$calls" | tr -d ' ' || printf '0'
+}
+
+# A command reaching no branch that needs the rule must not read the config.
+got=$(read_count 'ls')
+if [ "$got" = "0" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  lazy: ls read the scope config %s times, want 0\n' "$got"
+fi
+
+# The PR-title branch must read it, and memoization means exactly once.
+got=$(read_count 'gh pr create --title "feat(api): thing"')
+if [ "$got" = "1" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  lazy: gh pr create read the scope config %s times, want 1\n' "$got"
+fi
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
