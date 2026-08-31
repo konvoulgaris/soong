@@ -17,9 +17,11 @@ The title MUST be a single Conventional Commit line:
 - **type** — one of `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
   `build`, `ci`, `chore`, `revert`.
 - **scope** — optional, in parentheses, lowercase: `[a-z0-9./-]`. Use it only when it
-  names a real area touched, e.g. `feat(hooks):`. When no meaningful area applies, omit
-  the scope and parentheses entirely — write a plain `feat:`. Never use a placeholder or
-  wildcard scope like `feat(*):` or `feat(misc):`.
+  names a real area touched, e.g. `feat(hooks):`. When a change spans two or three
+  areas, separate them with commas and no spaces: `refactor(notifications,types):`.
+  Every segment must be non-empty. When no meaningful area applies, omit the scope and
+  parentheses entirely — write a plain `feat:`. Never use a placeholder or wildcard
+  scope like `feat(*):` or `feat(misc):`.
 - **`!`** — optional, marks a breaking change.
 - **summary** — required, imperative, lowercase, no trailing period.
 
@@ -31,6 +33,7 @@ Examples:
 - `feat(hooks): enforce PR conventions via plugin hook`
 - `fix: handle empty commit range`
 - `refactor(api)!: drop legacy auth header`
+- `refactor(notifications,types,schemas): always sync every property`
 
 Avoid:
 

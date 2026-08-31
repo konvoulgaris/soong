@@ -136,6 +136,9 @@ check deny   'title: not conventional' 'gh pr create --title "add a new command"
 check deny   'title: footer in body'   'gh pr create --title "feat: add command" --body "Co-Authored-By: Claude"'
 check advise 'title: valid'            'gh pr create --title "feat(hooks): enforce PR conventions" --body "x"'
 check advise 'title: valid no scope'   'gh pr create --title "fix: handle empty commit range" --body "x"'
+check advise 'title: multi-package scope' 'gh pr create --title "refactor(notifications,types,schemas): sync every property" --body "x"'
+check deny   'title: whitespace in scope' 'gh pr create --title "feat(a b): add thing" --body "x"'
+check deny   'title: empty scope segment' 'gh pr create --title "refactor(types,,schemas): sync every property" --body "x"'
 
 # Two simultaneous violations must join with "; " including the space.
 two=$(run 'gh pr create --title "feat(*): add thing" --body "Generated with Claude Code"')
