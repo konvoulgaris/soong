@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Self-check for architect-setup.sh. Run: bash architect-setup.test.sh
+# Self-check for soong-setup.sh. Run: bash soong-setup.test.sh
 set -uo pipefail
 
-script="$(cd "$(dirname "$0")" && pwd)/architect-setup.sh"
+script="$(cd "$(dirname "$0")" && pwd)/soong-setup.sh"
 XDG_DATA_HOME="$(mktemp -d)" || { echo "cannot create a temp dir" >&2; exit 1; }
 export XDG_DATA_HOME
 config="$XDG_DATA_HOME/soong/architect.json"
@@ -99,7 +99,7 @@ if chflags uchg "$config" 2>/dev/null; then
   check "failed write kept old value" OLD "$(jq -r '.demo.roadmapDb' "$config")"
   chflags nouchg "$config"
   check "failed write left no temp file" 0 \
-    "$(find "$(dirname "$config")" -name '.architect.*' | wc -l | tr -d ' ')"
+    "$(find "$(dirname "$config")" -name '.soong.*' | wc -l | tr -d ' ')"
 else
   echo "skip - failed-write checks (chflags unavailable)"
 fi

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Read or write the architect Notion mapping for a repo.
+# Read or write soong's per-repo configuration.
 #
-#   architect-setup.sh get [project]
-#   architect-setup.sh set --roadmap-db ID --task-db ID [--task-template ID] [project]
+#   soong-setup.sh get [project]
+#   soong-setup.sh set --roadmap-db ID --task-db ID [--task-template ID] [project]
 #
-# Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/architect.json
+# Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 # Shape:  { "<project>": { roadmapDb, taskDb, taskTemplate, updatedAt } }
 #
 # Exit codes, so a caller can branch:
@@ -14,16 +14,16 @@
 #   3  get only: this project has no mapping yet
 set -uo pipefail
 
-die() { echo "architect-setup: $1" >&2; exit "${2:-1}"; }
+die() { echo "soong-setup: $1" >&2; exit "${2:-1}"; }
 
 usage() {
   cat <<'EOF'
-Read or write the architect Notion mapping for a repo.
+Read or write soong's per-repo configuration.
 
-  architect-setup.sh get [project]
-  architect-setup.sh set --roadmap-db ID --task-db ID [--task-template ID] [project]
+  soong-setup.sh get [project]
+  soong-setup.sh set --roadmap-db ID --task-db ID [--task-template ID] [project]
 
-Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/architect.json
+Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 get exits 3 when the project has no mapping, so a caller can branch on it.
 EOF
 }
@@ -112,7 +112,7 @@ case "$cmd" in
       || die "$file is not a JSON object; fix or remove it"
 
     # Same dir as the target, so the rename is atomic and cannot cross devices.
-    tmp="$(mktemp "$dir/.architect.XXXXXX")" || die "cannot create a temp file in $dir"
+    tmp="$(mktemp "$dir/.soong.XXXXXX")" || die "cannot create a temp file in $dir"
     trap 'rm -f "$tmp"' EXIT
 
     jq --arg p "$project" --arg r "$roadmap" --arg k "$task" --arg tpl "$template" \
