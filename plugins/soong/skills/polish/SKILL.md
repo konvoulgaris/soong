@@ -5,18 +5,18 @@ description: Run a code review with autofix, then a simplification pass, then co
 
 # polish
 
-Two passes over the current changes, both applied, one commit, one short
-report.
+One agent over the current changes, its findings applied, one commit, one
+short report.
 
-Pass 1 finds correctness bugs and fixes them. Pass 2 removes the complexity
-that pass 1 does not care about. The order is fixed: a simplification pass
-over buggy code simplifies the wrong thing.
+The agent runs two passes internally: the first finds correctness bugs and
+fixes them, the second removes the complexity the first does not care about.
+The order is fixed inside the agent, because a simplification pass over buggy
+code simplifies the wrong thing.
 
 This skill runs unattended. The user chose autofix and auto-commit, so do not
-ask for approval between the passes. Tell both passes they are running
-unattended too: they apply their own findings, and a pass that stops to ask
-blocks a caller such as `develop` that invoked the whole chain to run without
-a user present.
+ask for approval once the agent returns. The agent runs unattended too: it
+applies its own findings, and a stop to ask blocks a caller such as `develop`
+that invoked the whole chain to run without a user present.
 
 ## Steps
 
@@ -44,23 +44,23 @@ a user present.
    If the tree is clean **and** the count is zero, there is nothing to review.
    Say so in one line and stop.
 
-   If either is non-empty, continue. Both passes work on the changed code.
+   If either is non-empty, continue. The agent works on the changed code.
 
-2. **Pass 1: review and fix.** Invoke the `code-review` skill with:
+2. **Polish.** Dispatch the `soong:code-polisher` agent with the base you
+   resolved in step 1. It reviews the changed code for correctness bugs and
+   applies the fixes, then simplifies what is left, in that order.
 
-   ```
-   --fix
-   ```
+   Dispatch it once, in the foreground: the commit in step 4 needs its result,
+   and nothing else can run while it works.
 
-   `--fix` applies the findings to the working tree. Do not pass an effort
-   level: absent one, `code-review` reuses the level the user last chose, which
-   is the level they want. Record each finding the pass reports.
+   Tell it the base explicitly. It resolves nothing on its own, and without a
+   base it cannot tell which lines this branch changed.
 
-3. **Pass 2: simplify.** Invoke the `simplify` skill with no argument. It
-   reviews the changed code for reuse, simplification, efficiency, and
-   altitude, and applies the fixes. Record each change it reports.
+   The agent applies its own findings and never commits. Record the files it
+   reports and each finding under `Fixed`, `Simplified`, and `Not applied` -
+   those are what the report in step 4 is built from.
 
-4. **Verify.** Figure out how this repo verifies a build before running
+3. **Verify.** Figure out how this repo verifies a build before running
    anything - do not assume a language or tool. Look at the project's
    CLAUDE.md / README, the build config, and lockfiles to find the right
    command. Prefer whatever the project documents. A repo can also keep its
@@ -72,16 +72,16 @@ a user present.
 
    If the failure looks like stale or missing dependencies, run the install
    command once before treating it as real - the same rule `merge` and `rebase`
-   carry. A pass that touched a manifest produces exactly this false positive.
+   carry. An agent that touched a manifest produces exactly this false positive.
 
    If the check still fails, do not commit. Report the failure with the command
-   output and stop. A failing check after an autofix means a pass broke
+   output and stop. A failing check after an autofix means the agent broke
    something, and the user needs the broken state to look at.
 
    If the project declares no check, say so in the report. Never claim
    verification that did not run.
 
-5. **Commit.** If the current branch is the repository default branch, branch
+4. **Commit.** If the current branch is the repository default branch, branch
    **before** committing, so the default branch never carries the commit:
 
    ```bash
@@ -94,7 +94,7 @@ a user present.
    polish is invoked by a caller and the branch is the default branch, stop and
    say so instead.
 
-   Then stage the files the two passes touched, by path, and commit:
+   Then stage the files the agent reported, by path, and commit:
 
    ```bash
    git add <path> [<path>...]
@@ -108,10 +108,10 @@ a user present.
 
    Never `git add -A`, and never `git commit -a`: the tree can hold unrelated
    edits, and a caller such as `merge` may have just restored a stash, so a
-   blanket stage sweeps work neither pass reviewed into this commit. List the
-   paths the two passes reported.
+   blanket stage sweeps work the agent never reviewed into this commit. List
+   the paths the agent reported.
 
-   Use `fix:` instead of `refactor:` when pass 1 fixed a real bug. Add a body
+   Use `fix:` instead of `refactor:` when the agent fixed a real bug. Add a body
    only when the fixes are not obvious from the diff. Never add a generated-by
    footer or a Claude attribution tag.
 
@@ -143,13 +143,12 @@ Checked with `<the project's own check>`. Committed as a1b2c3d.
 Rules for the report:
 
 - One line per finding, one sentence, present the problem not the process.
-- Omit a heading with nothing under it. A pass that found nothing gets one
-  line: `Review found nothing.` or `Nothing to simplify.`
+- Omit a heading with nothing under it. A pass that found nothing gets the one
+  line the agent returned: `Review found nothing.` or `Nothing to simplify.`
 - The last line names the check that ran and the commit SHA. When no check
   ran, say `No project check configured.`
-- Never list a finding a pass reported but did not apply. If a pass skipped a
-  finding, add one more line after the check line: `Not applied: <one
-  sentence>.`
+- Never list a finding the agent reported but did not apply. Its `Not applied`
+  lines go after the check line: `Not applied: <one sentence>.`
 
 ## Rules
 
@@ -164,5 +163,5 @@ so check them before every commit:
 
 | Case | Response |
 | --- | --- |
-| A pass leaves a merge conflict marker or a broken file | Report the file and stop before the commit. |
+| The agent leaves a merge conflict marker or a broken file | Report the file and stop before the commit. |
 | On the default branch, invoked by another skill | Stop and say so. Do not switch branches under a caller. |
