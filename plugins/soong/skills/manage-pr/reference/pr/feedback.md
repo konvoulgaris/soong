@@ -18,9 +18,17 @@ starting.
 
 ## Gather unresolved threads
 
-Pull the review threads and keep only the **unresolved** ones (skip threads already
-marked resolved). Use the GraphQL API, since the REST comments endpoint does not carry
-resolution state:
+Gather in a subagent, not on the main thread. The GraphQL response carries every
+thread including the resolved ones, and the walk then needs the code around each
+comment on top of that. All of it stays in context for the rest of the walk, and
+none of it is what you reply from. Dispatch one Agent tool call,
+`subagent_type: Explore`, `model: sonnet`. `Explore` is read-only, so the
+gathering pass cannot touch the code the walk is about to change.
+
+Give the agent the PR number from the resolve step, plus the owner and repo,
+which that step does not return
+(`gh repo view --json owner,name -q '.owner.login + " " + .name'`). Substitute
+all three rather than passing the placeholders through, and tell it to run:
 
 ```
 gh api graphql -f query='
@@ -37,15 +45,29 @@ gh api graphql -f query='
   }' -F owner=<owner> -F repo=<repo> -F pr=<number>
 ```
 
-Collect, in order, each unresolved thread: file path, line, the reviewer's comment(s),
-and the comment id you will reply to. If there are none, tell the user and stop.
+Tell it to keep only the **unresolved** threads (skip threads already marked
+resolved), and to return them in order, one block each:
+
+- File path and line.
+- The reviewer's comment text, verbatim. This is what you reply to, so it must not
+  be summarized.
+- The comment id to reply to.
+- The code around that line, enough for the user to judge the comment without
+  opening the file, and no more.
+
+Tell it to propose nothing and to judge nothing. It gathers; the walk decides.
+
+If there are no unresolved threads, tell the user and stop. If the agent fails,
+run the query on the main thread and continue.
 
 ## Walk each comment with the user
 
 Track the threads as todos and go through them **one at a time, in order**. For each:
 
 1. Show the user the thread: file:line, the reviewer's text, and the surrounding code
-   so they have context without hunting for it.
+   the gather step returned, so they have context without hunting for it. Do not
+   re-read the file just to show that context again. Reading it is still required
+   before step 5 edits it.
 2. State your read of what the reviewer is asking for.
 3. Propose **a few options** for handling it, concretely, not generically. Typical
    shapes:
@@ -120,6 +142,8 @@ asks. Leave that to the reviewer.
   two rules are not in tension: no sign-off on each draft as it is written, one
   sign-off on the whole set before anything reaches GitHub.
 - Post all replies only at the end, never before, and never without that approval.
+- Gather the threads in a subagent. The reviewer's comment text comes back
+  verbatim; a summarized comment is one you cannot reply to accurately.
 - Only touch unresolved threads. Do not reply on or reopen resolved ones.
 - Never resolve or dismiss a reviewer's thread on their behalf unless asked.
 - If a code change is large or risky, flag it and confirm scope before editing rather

@@ -37,14 +37,36 @@ what the branch changes. This skill describes work; it does not do work.
    and merge approach as the "PR record" section in the `manage-pr` skill's
    `reference/pr/compose.md`). Then proceed.
 
-4. **Read the changes at a high level.** Diff the branch against its base locally:
+4. **Read the changes at a high level.** Do not diff on the main thread. A branch
+   diff is long, it is read once for its shape, and every line of it stays in
+   context for the rest of the run. Dispatch a subagent to read it and return the
+   shape instead: Agent tool, `subagent_type: Explore`, `model: sonnet`.
+
+   Resolve the base first, on the main thread, so the agent is given a branch
+   name and not a placeholder: the pull request's base
+   (`gh pr view --json baseRefName -q .baseRefName`), else the upstream tracking
+   branch minus its remote prefix, else the repository default branch.
+
+   Then tell the agent to run, with `<base>` substituted:
 
    ```bash
    git log --oneline <base>..HEAD
    git diff <base>...HEAD
    ```
 
-   Read for *intent and structure*, not line detail.
+   and to return only:
+
+   - The components, modules, or boundaries the branch touches.
+   - New behavior or contracts it introduces.
+   - What it removed or restructured.
+   - The rationale, where the commits or the code state one.
+
+   Tell it to read for *intent and structure*, not line detail, and to name
+   nothing about tests or verification, since step 5 must not describe them.
+   `Explore` is read-only, so it cannot edit the branch it is reading.
+
+   If the agent returns nothing usable, diff on the main thread and say in the
+   report that the delegated read failed.
 
 5. **Describe the changes like an architecture design.** Summarize the shape of the
    change: which components/modules/boundaries are affected, what new behavior or
@@ -63,4 +85,6 @@ what the branch changes. This skill describes work; it does not do work.
 - Never mention tests or how to verify.
 - Resolve the card from the PR record; ask the user only if it is missing, and persist
   it once given.
+- Read the diff in a subagent, never on the main thread. The shape is what step 5
+  needs, and the diff itself is not.
 - Defer all Notion writing style to `write-notion-content`.

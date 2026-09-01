@@ -131,6 +131,30 @@ earlier step can stop for free.
 4. **The gap pass.** Read every task card, skipped ones excluded. Per task, list
    what implementing it needs and the card does not answer.
 
+   Read the cards in subagents, not on the main thread. Every card body lands in
+   context otherwise, and the only thing the rest of this run needs from a card is
+   its gaps and the answers to them. Dispatch one Agent tool call per unskipped
+   task, `subagent_type: Explore`, `model: sonnet`, **all in one message** so they
+   run at the same time. The cards do not depend on each other, so reading them
+   in sequence buys nothing.
+
+   Give each agent one task's page id and the roadmap item id. The gaps are in the
+   card, so an agent needs nothing from the repository, and the stack's worktree
+   does not exist until step 5. Tell it to return, for that one card:
+
+   - The task title and page id, so the main thread can match the result back.
+   - Each thing implementing the card needs that the card does not answer, one
+     line each, phrased as the open question.
+   - Nothing else. No proposed answers, no implementation plan, no review of the
+     card. A proposed answer read as the user's answer is the failure this
+     forbids.
+
+   An agent that finds no gaps returns the title and "no gaps".
+
+   Any agent that fails, read that one card on the main thread. A failed gap pass
+   on one card is not a reason to stop the stack, and it is not a reason to treat
+   that card as gap-free.
+
    Show the whole list, including the tasks with no gaps, so the user can add a
    question the pass missed. A missed gap becomes a subagent's guess.
 
@@ -475,8 +499,9 @@ Two things the ledger deliberately does not do:
 - Never open a draft unless the user passed `--draft`.
 - Never skip either review stage, and never substitute a main-thread read for
   one.
-- Ask the gap questions inline, one at a time. Never batch them, and never write
-  a design document for a task.
+- Read the task cards in parallel subagents, and ask the gap questions inline, one
+  at a time, on the main thread. The reading is delegated; the asking never is.
+  Never batch the questions, and never write a design document for a task.
 - Keep plan files out of the repository, so no pull request carries another
   task's plan.
 - Notion writes do not reverse. Status is the only card write, and the body is

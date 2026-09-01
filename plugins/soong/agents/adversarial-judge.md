@@ -1,7 +1,7 @@
 ---
 name: adversarial-judge
 description: Judges a set of architecture review findings and classifies each one as drop, auto-resolve, needs-user, or abstain. Dispatched twice by the adversarial-council skill, once per evidence lens. Read-only - never edits files and never writes to Notion.
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
