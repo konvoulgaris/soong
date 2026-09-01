@@ -46,9 +46,10 @@ that invoked the whole chain to run without a user present.
 
    If either is non-empty, continue. The agent works on the changed code.
 
-2. **Polish.** Dispatch the `soong:code-polisher` agent with the base you
-   resolved in step 1. It reviews the changed code for correctness bugs and
-   applies the fixes, then simplifies what is left, in that order.
+2. **Polish.** Dispatch the `code-polisher` agent (Agent tool,
+   `subagent_type: code-polisher`) with the base you resolved in step 1. It
+   reviews the changed code for correctness bugs and applies the fixes, then
+   simplifies what is left, in that order.
 
    Dispatch it once, in the foreground: the commit in step 4 needs its result,
    and nothing else can run while it works.
