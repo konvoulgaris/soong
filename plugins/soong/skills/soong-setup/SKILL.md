@@ -43,6 +43,11 @@ capability, configure that one alone.
 
 `taskTemplate` is optional. Every other key is required by its capability.
 
+`commits` is the one capability whose absence is itself enforced: without it the
+guard hook denies PR creates and edits outright rather than checking nothing. A
+guard that quietly passes everything until someone remembers to switch it on is
+not a guard, so an unconfigured repo is stopped at the PR and told to come here.
+
 ## Steps
 
 1. **See what is missing.**
@@ -83,10 +88,15 @@ capability, configure that one alone.
    > `feat(scope): summary`? Answering yes denies subjects without a scope.
    > Answering no denies subjects with one.
 
-   There is no third answer here. Leaving the question unanswered is what the repo
-   already does, and the user reaches this step by choosing to answer it. Say what
-   each answer turns on, because both directions deny something that is legal
-   today.
+   There is no third answer here, and leaving it unanswered is not a neutral
+   option: until this is recorded, the guard hook denies every `gh pr create` and
+   `gh pr edit` in the repo and names this skill as the fix. Say what each answer
+   turns on, because both directions deny something that is legal today, and both
+   are also what lifts that denial.
+
+   Commits are the exception. They keep working in an unconfigured repo, because
+   this hook runs on every repo on the machine and denying `git commit -m "wip"`
+   in each one nobody has set up is how a guard gets switched off for good.
 
 7. **Write what was gathered.** Pass only the flags for the capabilities you asked
    about; the script merges, so it does not disturb the rest.

@@ -42,13 +42,31 @@ scope_rule() {
     local setup_sh
     setup_sh="$(cd "$(dirname "$0")/../../skills/soong-setup/scripts" 2>/dev/null && pwd)/soong-setup.sh"
     if [ -f "$setup_sh" ] && command -v jq >/dev/null 2>&1; then
-      # Fail open on everything: a missing config, a corrupt one, a non-repo cwd,
-      # a missing jq. A guard that dies loudly on every Bash call because a config
-      # file got corrupted is worse than one that quietly stops checking scope.
-      _scope_rule="$(bash "$setup_sh" get 2>/dev/null \
-        | jq -r 'if type == "object" and has("requireScope")
-                 then (.requireScope | tostring) else "" end' 2>/dev/null)"
-      case "$_scope_rule" in true|false) ;; *) _scope_rule="" ;; esac
+      # Three outcomes, not two. "unset" and "unreadable" used to collapse into
+      # the same empty string, which made an unconfigured repo indistinguishable
+      # from a broken one -- and since the empty string means "check nothing",
+      # a repo nobody had run soong-setup on got a guard that enforced nothing
+      # while looking like it worked. That is the failure this split exists to
+      # end: a rule that only works if someone remembers to switch it on is not
+      # a rule.
+      #
+      # get exits 3 for "no mapping for this project", which is the honest
+      # not-configured signal. Anything else -- a corrupt file, a non-repo cwd --
+      # stays fail-open, because those are not the user's omission to fix and a
+      # guard that shouts on every Bash call over a corrupt config is worse than
+      # one that quietly stops checking.
+      local raw status
+      raw="$(bash "$setup_sh" get 2>/dev/null)"; status=$?
+      if [ "$status" -eq 3 ]; then
+        _scope_rule="unconfigured"
+      else
+        _scope_rule="$(printf '%s' "$raw" \
+          | jq -r 'if type == "object" and has("requireScope")
+                   then (.requireScope | tostring) else "unconfigured" end' 2>/dev/null)"
+        # A read that failed for any other reason lands here as empty, and empty
+        # is the one value that checks nothing.
+        case "$_scope_rule" in true|false|unconfigured) ;; *) _scope_rule="" ;; esac
+      fi
     fi
   fi
   printf '%s' "$_scope_rule"
@@ -59,6 +77,19 @@ scope_rule() {
 # question.
 has_scope() {
   printf '%s' "$1" | grep -qE '^[a-z]+\([^)]*\)!?:'
+}
+
+# How many comma-separated segments the scope carries. 0 when there is no scope,
+# so a caller can compare against a cap without testing has_scope first.
+#
+# Counts commas inside the first parenthesised group only, and prints a number on
+# every path -- a subject with no scope, or one whose shape the rule above
+# already rejected, must not make the caller's arithmetic blow up.
+scope_segments() {
+  local scope
+  scope="$(printf '%s' "$1" | sed -nE 's/^[a-z]+\(([^)]*)\)!?:.*/\1/p')"
+  [ -n "$scope" ] || { printf '0'; return; }
+  printf '%s' "$scope" | tr ',' '\n' | grep -c .
 }
 
 TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
@@ -91,6 +122,16 @@ subject_reasons() { # subject_reasons <subject> <noun> <plural> <require_scope>
     echo "This repo requires a scope on $plural. Write 'feat(scope): summary'. Got: \"$subj\""
   elif [ "$rule" = "false" ] && has_scope "$subj"; then
     echo "This repo does not use scopes on $plural. Write 'feat: summary'. Got: \"$subj\""
+  fi
+
+  # A comma-separated scope names a genuinely cross-cutting change, and past
+  # three segments it has stopped naming an area and started listing files. The
+  # shape rule above accepts any number, so this is the only thing standing
+  # between a real multi-package scope and a changelog in the parentheses.
+  # Independent of the require_scope rule: a repo that requires scopes still
+  # wants them to mean something.
+  if [ "$(scope_segments "$subj")" -gt 3 ]; then
+    echo "A scope names at most three areas. More than that lists files rather than naming an area: pick the primary one, or drop the scope. Got: \"$subj\""
   fi
 }
 
@@ -179,6 +220,14 @@ case "$cmd" in
 
     reasons=()
 
+    # An unconfigured repo is stopped here rather than waved through. A PR is
+    # low-frequency and deliberate, so this is the right place to demand the
+    # setup the guard depends on -- unlike a commit, which must keep working in
+    # every repo on the machine (see branch 1.5).
+    if [ "$(scope_rule)" = "unconfigured" ]; then
+      deny "This repo has no soong commit configuration, so the PR-title conventions cannot be checked. Run /soong-setup and answer the commits question, then retry. It records whether this repo's titles carry a scope; until it does, this guard would pass any title, which is worse than stopping."
+    fi
+
     if [ -n "$title" ]; then
       # scope_rule is called once into a variable, not per check: one command,
       # one config read.
@@ -235,7 +284,12 @@ esac
 case "$cmd" in
   *"git commit"*)
     require_scope="$(scope_rule)"
-    if [ -n "$require_scope" ]; then
+    # "unconfigured" is excluded alongside the empty string on purpose. The PR
+    # branch denies on it, and a commit must not: this hook runs on every repo
+    # on the machine, and denying `git commit -m "wip"` in each one the user
+    # never set up is how a guard gets turned off entirely. A PR is the
+    # deliberate, low-frequency moment where demanding setup is proportionate.
+    if [ -n "$require_scope" ] && [ "$require_scope" != "unconfigured" ]; then
       # Generated and reused subjects are exempt. git writes "fixup!"/"squash!"
       # itself and a later rebase absorbs them, and --amend with no -m reuses a
       # message that is not in this command. Denying either would break the

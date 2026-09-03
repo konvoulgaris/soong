@@ -19,9 +19,17 @@ The title MUST be a single Conventional Commit line:
 - **scope** — optional, in parentheses, lowercase: `[a-z0-9./-]`. Use it only when it
   names a real area touched, e.g. `feat(hooks):`. When a change spans two or three
   areas, separate them with commas and no spaces: `refactor(notifications,types):`.
-  Every segment must be non-empty. When no meaningful area applies, omit the scope and
-  parentheses entirely — write a plain `feat:`. Never use a placeholder or wildcard
-  scope like `feat(*):` or `feat(misc):`.
+  Every segment must be non-empty. **At most three**, and the hook denies more: past
+  three the scope has stopped naming an area and started listing files. A change
+  that seems to need four is usually one area plus its documentation — name the
+  area. When no meaningful area applies, omit the scope and parentheses entirely —
+  write a plain `feat:`. Never use a placeholder or wildcard scope like `feat(*):`
+  or `feat(misc):`.
+
+  Whether a scope is allowed at all is the repo's own setting, recorded by
+  `soong-setup`. A repo can require one, forbid one, or not be set up — and until
+  it is set up the hook denies the PR and says so. Do not assume the shape from
+  the repo's history; the hook will tell you.
 - **`!`** — optional, marks a breaking change.
 - **summary** — required, imperative, lowercase, no trailing period.
 
