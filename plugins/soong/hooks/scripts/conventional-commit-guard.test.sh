@@ -157,14 +157,45 @@ OUTER
 check deny 'heredoc: signature survives newlines into the hook' "$heredoc_cmd"
 
 # --- branch 1: title rules -------------------------------------------------
+# These rows are about title shape, not about setup, so the repo is configured
+# throughout -- an unconfigured one is denied before any of it is reached. The
+# scoped and unscoped rows are split because there is no longer a state that
+# permits both: "no preference" now means "not set up yet".
+scope_state true
 check deny   'title: wildcard scope'   'gh pr create --title "feat(*): add new command" --body "x"'
 check deny   'title: not conventional' 'gh pr create --title "add a new command" --body "x"'
-check deny   'title: footer in body'   'gh pr create --title "feat: add command" --body "Co-Authored-By: Claude"'
 check advise 'title: valid'            'gh pr create --title "feat(hooks): enforce PR conventions" --body "x"'
-check advise 'title: valid no scope'   'gh pr create --title "fix: handle empty commit range" --body "x"'
-check advise 'title: multi-package scope' 'gh pr create --title "refactor(notifications,types,schemas): sync every property" --body "x"'
+check advise 'title: multi-package scope' 'gh pr create --title "refactor(notifications,types): sync every property" --body "x"'
 check deny   'title: whitespace in scope' 'gh pr create --title "feat(a b): add thing" --body "x"'
 check deny   'title: empty scope segment' 'gh pr create --title "refactor(types,,schemas): sync every property" --body "x"'
+
+# The scope cap: three areas is a cross-cutting change, four is a file list.
+# Independent of the require_scope rule -- a repo that requires scopes still
+# wants them to name something.
+scope_state true
+check advise 'cap: one segment'    'gh pr create --title "feat(hooks): thing"'
+check advise 'cap: two segments'   'gh pr create --title "feat(hooks,polish): thing"'
+check advise 'cap: three segments' 'gh pr create --title "feat(hooks,polish,manage-pr): thing"'
+check deny   'cap: four segments'  'gh pr create --title "feat(a,b,c,d): thing"'
+check deny   'cap: five segments'  'gh pr create --title "feat(a,b,c,d,e): thing"'
+
+# The cap applies to commit subjects too, from the same shared function.
+check deny 'cap: four on a commit' 'git commit -m "feat(a,b,c,d): thing"'
+
+# The deny must say what to do, not merely that the title is wrong.
+if run 'gh pr create --title "feat(a,b,c,d): thing"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason | test("at most three")' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  scope cap deny did not state the limit\n'
+fi
+
+scope_state false
+check deny   'title: footer in body'   'gh pr create --title "feat: add command" --body "Co-Authored-By: Claude"'
+check advise 'title: valid no scope'   'gh pr create --title "fix: handle empty commit range" --body "x"'
+# No scope, no segments, no spurious cap violation.
+check advise 'cap: unscoped is zero'   'gh pr create --title "fix: thing"'
 
 # Two simultaneous violations must join with "; " including the space.
 two=$(run 'gh pr create --title "feat(*): add thing" --body "Generated with Claude Code"')
@@ -210,6 +241,87 @@ do
   fi
 done
 
+# --- the polish precondition ------------------------------------------------
+# The guard denies a PR create/edit whose HEAD carries no Polish-passes trailer.
+# These need real commits, and the main fixture is deliberately commit-less (it
+# is what exercises the fail-open path above), so they run in a repo of their own
+# and this one returns to the fixture afterwards.
+polish_repo="$XDG_DATA_HOME/polish"
+git init -q "$polish_repo" 2>/dev/null
+git -C "$polish_repo" config user.email t@example.com
+git -C "$polish_repo" config user.name t
+
+# Configured, because an unconfigured repo is denied on that alone and these
+# rows are about the trailer. Its project key is the directory name, "polish",
+# not the fixture's.
+bash "$setup" set --require-scope false polish >/dev/null 2>&1
+
+# An unborn HEAD must fail open: unreadable is not the same as absent, and a
+# guard that denies every PR in a fresh repo is worse than one that stops
+# checking.
+cd "$polish_repo" || exit 1
+check advise 'polish: unborn HEAD falls open' 'gh pr create --title "feat: thing" --body "x"'
+
+git commit -q --allow-empty -m "feat: work"
+check deny   'polish: no trailer on HEAD'     'gh pr create --title "feat: thing" --body "x"'
+check deny   'polish: no trailer on edit'     'gh pr edit 5 --title "feat: thing"'
+check advise 'polish: --no-polish opts out'   'gh pr create --title "feat: thing" --body "x" --no-polish'
+
+# The deny must name the trailer, so the reason tells the reader what to run
+# rather than only that something is wrong.
+if run 'gh pr create --title "feat: thing"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason | test("Polish-passes")' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  polish deny did not name the trailer\n'
+fi
+
+# A correct title denied only on the trailer must NOT be told to fix the title.
+# That tail belongs to the title and footer reasons; over a good title it sends
+# the reader to edit something that was already right.
+if run 'gh pr create --title "feat: thing" --body "x"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason
+            | test("fix the title") | not' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  polish-only deny told the reader to fix the title\n'
+fi
+
+# The opt-out rides as a trailing shell comment, because `gh` rejects it as an
+# unknown flag. The hook reads the raw command string, so it still sees it.
+check advise 'polish: comment-form opt-out' 'gh pr create --title "feat: thing" --body "x"  # --no-polish'
+
+git commit -q --allow-empty -m "refactor: polish" -m "Polish-passes: review,simplify"
+check advise 'polish: trailer on HEAD'        'gh pr create --title "feat: thing" --body "x"'
+
+# Anchored on HEAD alone. A branch that polished and then committed more work is
+# stale, and a range check would wrongly pass it -- the exact case the trailer
+# check exists to catch.
+git commit -q --allow-empty -m "feat: more work"
+check deny   'polish: stale after new commit' 'gh pr create --title "feat: thing" --body "x"'
+
+# A title problem and a missing trailer are both reported, not just the first.
+git commit -q --allow-empty -m "feat: work"
+if run 'gh pr create --title "nope"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason
+            | test("Conventional Commits") and test("Polish-passes")' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  polish deny did not combine with the title reason\n'
+fi
+
+# The precondition is a PR-branch rule only. A commit must not be judged on it,
+# or polish could never make the commit that clears it.
+# Never deny. This repo is configured, so the commit branch advises on its scope
+# rule -- what matters is that the missing trailer plays no part in it, or polish
+# could never make the commit that clears it.
+check advise 'polish: commit unaffected'      'git commit -m "feat: thing"'
+
+cd "$fixture" || exit 1
+
 # The hook finds soong-setup.sh relative to its own path. A directory move must
 # fail here rather than silently disabling the scope rule.
 if [ -f "$setup" ]; then
@@ -229,11 +341,26 @@ scope_state false
 check deny   'scope forbidden, one given'    'gh pr create --title "feat(api): thing"'
 check advise 'scope forbidden, none given'   'gh pr create --title "feat: thing"'
 
+# An unconfigured repo is denied, whatever the title. This used to be the
+# permissive state -- both forms accepted, nothing enforced -- which meant the
+# guard was decoration until someone remembered to run soong-setup. A rule that
+# only works when it has been switched on is not a rule, so "not set up" is now
+# a denial that names the fix.
 scope_state
-check advise 'unset allows a scope'          'gh pr create --title "feat(api): thing"'
-check advise 'unset allows no scope'         'gh pr create --title "feat: thing"'
-check deny   'unset still denies placeholder' 'gh pr create --title "feat(misc): thing"'
-check deny   'unset still denies bad shape'  'gh pr create --title "thing"'
+check deny 'unconfigured denies a scoped title'   'gh pr create --title "feat(api): thing"'
+check deny 'unconfigured denies an unscoped one'  'gh pr create --title "feat: thing"'
+check deny 'unconfigured denies a placeholder'    'gh pr create --title "feat(misc): thing"'
+check deny 'unconfigured denies a bad shape'      'gh pr create --title "thing"'
+
+# The denial must name soong-setup. A guard that refuses without saying what to
+# run just looks broken.
+if run 'gh pr create --title "feat(api): thing"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason | test("soong-setup")' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  unconfigured deny did not name soong-setup\n'
+fi
 
 # a corrupt config must not enforce a scope rule, and must not break the guard
 mkdir -p "$XDG_DATA_HOME/soong"

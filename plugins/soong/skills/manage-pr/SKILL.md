@@ -39,6 +39,11 @@ These apply in both modes.
 - **Polish before you compose.** Compose mode reviews the branch before it
   opens a pull request. `reference/pr/compose.md` step 0 holds the rule.
   Feedback mode never polishes.
+- **A step that says "do not ask" has already granted the authorization.**
+  These skills state where a decision was made. Asking anyway is not caution: it
+  re-opens a settled decision, and it stalls a caller such as `develop` that runs
+  the whole chain with nobody at the keyboard. Announce what you are doing and do
+  it. This does not license the reverse — a step that says to ask still asks.
 
-If the PR-guard hook denies a command, read its reason and fix the title or body.
-Do not bypass the hook.
+If the PR-guard hook denies a command, read its reason and do what it says: fix
+the title or body, or run the skill it names. Do not bypass the hook.

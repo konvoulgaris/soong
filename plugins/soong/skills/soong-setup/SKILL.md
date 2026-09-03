@@ -1,6 +1,6 @@
 ---
 name: soong-setup
-description: Record what this repo needs for soong's skills to run - which Notion roadmap and task databases it maps to, and whether its commits carry a Conventional Commits scope. Use when the user runs /soong-setup, when another skill reports the repo is not configured, or when the user wants to change what a repo is configured for. Stops without writing anything if the user does not supply valid Notion databases.
+description: Record what this repo needs for soong's skills to run - whether it uses Notion at all and which roadmap and task databases it maps to, and whether its commits carry a Conventional Commits scope. Use when the user runs /soong-setup, when another skill reports the repo is not configured, or when the user wants to change what a repo is configured for. A repo can record that it does not use Notion, which settles that capability for good. Stops without writing anything if the user says the repo uses Notion but does not supply valid databases.
 ---
 
 # soong-setup
@@ -36,12 +36,22 @@ capability, configure that one alone.
 
 ## Capabilities
 
-| Capability | Keys                                  | Used by                |
-| ---------- | ------------------------------------- | ---------------------- |
-| `notion`   | `roadmapDb`, `taskDb`, `taskTemplate` | `architect`, `develop` |
-| `commits`  | `requireScope`                        | the `conventional-commit-guard` hook    |
+| Capability | Keys                                               | Used by                |
+| ---------- | -------------------------------------------------- | ---------------------- |
+| `notion`   | `useNotion`, `roadmapDb`, `taskDb`, `taskTemplate` | `architect`, `develop` |
+| `commits`  | `requireScope`                                     | the `conventional-commit-guard` hook    |
 
 `taskTemplate` is optional. Every other key is required by its capability.
+
+`useNotion` is how a repo says it has no Notion side. Set false, it satisfies
+`notion` on its own and the databases are never asked for again. Set true, the
+databases are still required. Passing a database id records true implicitly, so
+a repo cannot end up holding ids and a no.
+
+`commits` is the one capability whose absence is itself enforced: without it the
+guard hook denies PR creates and edits outright rather than checking nothing. A
+guard that quietly passes everything until someone remembers to switch it on is
+not a guard, so an unconfigured repo is stopped at the PR and told to come here.
 
 ## Steps
 
@@ -58,13 +68,33 @@ capability, configure that one alone.
    questions below cannot succeed. Exit 2 means this is not a git repository, or
    the capability name is wrong: report it and stop.
 
-2. **For `notion`, ask for the roadmap item database.** Ask for a Notion database
+2. **For `notion`, ask whether this repo uses Notion at all.**
+
+   > Does this repo track work on Notion? `/architect` and `/develop` write
+   > roadmap items and tasks there. Answering no records that, and they stay
+   > unavailable here.
+
+   This is an explicit answer, not an inference from whether the user has ids to
+   hand. A repo with no Notion side is a normal repo, and until it can say so,
+   `check` reports the databases as missing for good and every skill that checks
+   keeps sending the user back to a setup they already finished.
+
+   On no, write it and skip to the `commits` question:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" set --use-notion false
+   ```
+
+   On yes, continue to the next step. Supplying a database id records the same
+   answer implicitly, so there is no way to end up with ids and a no.
+
+3. **Ask for the roadmap item database.** Ask for a Notion database
    URL or id.
 
-3. **Ask for the task database.** Same. One Notion task in this database is one PR
+4. **Ask for the task database.** Same. One Notion task in this database is one PR
    in a stack.
 
-4. **Verify both databases with the Notion MCP** before writing anything. Fetch
+5. **Verify both databases with the Notion MCP** before writing anything. Fetch
    each one and confirm it resolves to a database the user can access. Show the
    user the resolved database titles so they can catch a wrong paste.
 
@@ -72,32 +102,37 @@ capability, configure that one alone.
    here.** Write nothing. Say which database was invalid and that `/architect`
    stays unavailable for this repo until setup completes.
 
-5. **Offer the task template.** List the templates available on the task database
+6. **Offer the task template.** List the templates available on the task database
    and let the user pick one, or skip. The template is optional; `architect` falls
    back to the database's own default when it is null.
 
-6. **For `commits`, ask one question:** does this repo require a scope on commit
+7. **For `commits`, ask one question:** does this repo require a scope on commit
    and PR subjects?
 
    > Do commits and PR titles in this repo carry a scope, as in
    > `feat(scope): summary`? Answering yes denies subjects without a scope.
    > Answering no denies subjects with one.
 
-   There is no third answer here. Leaving the question unanswered is what the repo
-   already does, and the user reaches this step by choosing to answer it. Say what
-   each answer turns on, because both directions deny something that is legal
-   today.
+   There is no third answer here, and leaving it unanswered is not a neutral
+   option: until this is recorded, the guard hook denies every `gh pr create` and
+   `gh pr edit` in the repo and names this skill as the fix. Say what each answer
+   turns on, because both directions deny something that is legal today, and both
+   are also what lifts that denial.
 
-7. **Write what was gathered.** Pass only the flags for the capabilities you asked
+   Commits are the exception. They keep working in an unconfigured repo, because
+   this hook runs on every repo on the machine and denying `git commit -m "wip"`
+   in each one nobody has set up is how a guard gets switched off for good.
+
+8. **Write what was gathered.** Pass only the flags for the capabilities you asked
    about; the script merges, so it does not disturb the rest.
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" set \
      [--roadmap-db "<id>"] [--task-db "<id>"] [--task-template "<id>"] \
-     [--require-scope true|false]
+     [--require-scope true|false] [--use-notion true|false]
    ```
 
-8. **Confirm** the stored record back to the user, and name which skills just
+9. **Confirm** the stored record back to the user, and name which skills just
    became available.
 
 ## Rules
@@ -109,3 +144,7 @@ capability, configure that one alone.
 - Never answer the `commits` question on the user's behalf by reading the repo's
   git history. A repo whose commits are inconsistent is exactly the repo where the
   user's intent is the only signal that matters.
+- Never answer the `notion` question on the user's behalf either, and never infer
+  it from whether the user happens to have ids to hand. "I do not have them now"
+  and "this repo has no Notion side" are different answers, and recording the
+  second when the user meant the first stops the question being asked again.

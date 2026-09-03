@@ -81,6 +81,12 @@ earlier step can stop for free.
    config, exit 2 is not a git repository. Both stop. A non-zero `get` after a
    clean `check` is a bug: report it and stop.
 
+   Read `useNotion` from `get` before the ids. **False means this repo does not
+   use Notion at all**, and it satisfies the capability, so exit 0 alone does not
+   rule it out. Say this repo is not tracked on Notion, so `/develop` does not
+   apply, and stop. Do not invoke setup: the user answered this already, and
+   changing the answer is theirs to ask for.
+
    Confirm the Notion MCP is reachable in this step, rather than finding out at
    task 4 that the stack has nowhere to report.
 

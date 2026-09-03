@@ -42,13 +42,31 @@ scope_rule() {
     local setup_sh
     setup_sh="$(cd "$(dirname "$0")/../../skills/soong-setup/scripts" 2>/dev/null && pwd)/soong-setup.sh"
     if [ -f "$setup_sh" ] && command -v jq >/dev/null 2>&1; then
-      # Fail open on everything: a missing config, a corrupt one, a non-repo cwd,
-      # a missing jq. A guard that dies loudly on every Bash call because a config
-      # file got corrupted is worse than one that quietly stops checking scope.
-      _scope_rule="$(bash "$setup_sh" get 2>/dev/null \
-        | jq -r 'if type == "object" and has("requireScope")
-                 then (.requireScope | tostring) else "" end' 2>/dev/null)"
-      case "$_scope_rule" in true|false) ;; *) _scope_rule="" ;; esac
+      # Three outcomes, not two. "unset" and "unreadable" used to collapse into
+      # the same empty string, which made an unconfigured repo indistinguishable
+      # from a broken one -- and since the empty string means "check nothing",
+      # a repo nobody had run soong-setup on got a guard that enforced nothing
+      # while looking like it worked. That is the failure this split exists to
+      # end: a rule that only works if someone remembers to switch it on is not
+      # a rule.
+      #
+      # get exits 3 for "no mapping for this project", which is the honest
+      # not-configured signal. Anything else -- a corrupt file, a non-repo cwd --
+      # stays fail-open, because those are not the user's omission to fix and a
+      # guard that shouts on every Bash call over a corrupt config is worse than
+      # one that quietly stops checking.
+      local raw status
+      raw="$(bash "$setup_sh" get 2>/dev/null)"; status=$?
+      if [ "$status" -eq 3 ]; then
+        _scope_rule="unconfigured"
+      else
+        _scope_rule="$(printf '%s' "$raw" \
+          | jq -r 'if type == "object" and has("requireScope")
+                   then (.requireScope | tostring) else "unconfigured" end' 2>/dev/null)"
+        # A read that failed for any other reason lands here as empty, and empty
+        # is the one value that checks nothing.
+        case "$_scope_rule" in true|false|unconfigured) ;; *) _scope_rule="" ;; esac
+      fi
     fi
   fi
   printf '%s' "$_scope_rule"
@@ -59,6 +77,19 @@ scope_rule() {
 # question.
 has_scope() {
   printf '%s' "$1" | grep -qE '^[a-z]+\([^)]*\)!?:'
+}
+
+# How many comma-separated segments the scope carries. 0 when there is no scope,
+# so a caller can compare against a cap without testing has_scope first.
+#
+# Counts commas inside the first parenthesised group only, and prints a number on
+# every path -- a subject with no scope, or one whose shape the rule above
+# already rejected, must not make the caller's arithmetic blow up.
+scope_segments() {
+  local scope
+  scope="$(printf '%s' "$1" | sed -nE 's/^[a-z]+\(([^)]*)\)!?:.*/\1/p')"
+  [ -n "$scope" ] || { printf '0'; return; }
+  printf '%s' "$scope" | tr ',' '\n' | grep -c .
 }
 
 TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
@@ -91,6 +122,16 @@ subject_reasons() { # subject_reasons <subject> <noun> <plural> <require_scope>
     echo "This repo requires a scope on $plural. Write 'feat(scope): summary'. Got: \"$subj\""
   elif [ "$rule" = "false" ] && has_scope "$subj"; then
     echo "This repo does not use scopes on $plural. Write 'feat: summary'. Got: \"$subj\""
+  fi
+
+  # A comma-separated scope names a genuinely cross-cutting change, and past
+  # three segments it has stopped naming an area and started listing files. The
+  # shape rule above accepts any number, so this is the only thing standing
+  # between a real multi-package scope and a changelog in the parentheses.
+  # Independent of the require_scope rule: a repo that requires scopes still
+  # wants them to mean something.
+  if [ "$(scope_segments "$subj")" -gt 3 ]; then
+    echo "A scope names at most three areas. More than that lists files rather than naming an area: pick the primary one, or drop the scope. Got: \"$subj\""
   fi
 }
 
@@ -125,6 +166,31 @@ body_lines() {
     -e "s/\\\$\(cat <<-?'?[A-Za-z_]+'?/\n/g"
 }
 
+# Has the polish skill run on the current HEAD?
+#
+# The polish skill writes a `Polish-passes` trailer on the commit it makes, and
+# manage-pr compose step 0 reads that trailer to decide whether to run polish
+# before opening a pull request. That rule lived only in prose, which is exactly
+# the kind of instruction an agent talks itself out of when the situation looks
+# slightly off-spec. Checking it here turns it into a precondition: the `gh`
+# call fails until polish has run, so there is nothing left to rationalise.
+#
+# Anchored on HEAD alone, not a range, matching the skill: a range would pass a
+# branch that polished and then committed more work unreviewed, which is the
+# stale case the check exists to catch.
+#
+# Fails open on everything -- an unborn HEAD, a non-repo cwd, a missing git.
+# `git log -1 HEAD` exits 128 in a repo with no commits, and a guard that denies
+# every `gh pr create` because it could not read a trailer is worse than one that
+# quietly stops checking. Returns 1 (present, or unknowable) by default and 0
+# only on a positive read of an absent trailer.
+polish_missing() {
+  command -v git >/dev/null 2>&1 || return 1
+  local trailer
+  trailer="$(git log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD 2>/dev/null)" || return 1
+  [ -z "$(printf '%s' "$trailer" | tr -d '[:space:]')" ]
+}
+
 deny() {
   printf '%s' "$1" \
     | jq -Rs '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:.}}'
@@ -154,6 +220,14 @@ case "$cmd" in
 
     reasons=()
 
+    # An unconfigured repo is stopped here rather than waved through. A PR is
+    # low-frequency and deliberate, so this is the right place to demand the
+    # setup the guard depends on -- unlike a commit, which must keep working in
+    # every repo on the machine (see branch 1.5).
+    if [ "$(scope_rule)" = "unconfigured" ]; then
+      deny "This repo has no soong commit configuration, so the PR-title conventions cannot be checked. Run /soong-setup and answer the commits question, then retry. It records whether this repo's titles carry a scope; until it does, this guard would pass any title, which is worse than stopping."
+    fi
+
     if [ -n "$title" ]; then
       # scope_rule is called once into a variable, not per check: one command,
       # one config read.
@@ -168,8 +242,31 @@ EOF
       reasons+=("PR must NOT contain a generated-by footer (no 'Generated with', 'Co-Authored-By', or robot emoji).")
     fi
 
+    # Everything above is a problem with the strings in this command, and the
+    # tail below tells the reader to fix them. The polish precondition is not:
+    # the command can be perfect and still be denied because the code behind it
+    # was never reviewed. So it is collected separately, and carries its own
+    # remedy -- told to "fix the title and description" over a correct title, a
+    # reader edits something that was already right.
+    #
+    # Skipped when the command carries --no-polish, the same escape hatch
+    # compose documents: the caller states the branch's code is not what this
+    # pull request is about. `gh` rejects that as an unknown flag, so compose
+    # appends it as a trailing shell comment -- `gh` never sees it, and this
+    # hook, which reads the raw command string, does.
+    polish_reason=""
+    if ! printf '%s' "$cmd" | grep -qE -- '--no-polish' && polish_missing; then
+      polish_reason="HEAD carries no 'Polish-passes' trailer, so the polish skill has not run on this code. Run the soong polish skill now -- it is unattended and needs no approval -- then retry. It rewrites code and commits by design; that is what the skill is for, and it does not need separate approval. Append '# --no-polish' only when the branch's code is not what this PR is about."
+    fi
+
     if [ ${#reasons[@]} -gt 0 ]; then
-      deny "$(join_reasons "${reasons[@]}") Invoke the soong manage-pr skill, which defines these conventions, to fix the title and description, then retry."
+      remedy="Invoke the soong manage-pr skill, which defines these conventions, to fix the title and description, then retry."
+      [ -n "$polish_reason" ] && remedy="$remedy $polish_reason"
+      deny "$(join_reasons "${reasons[@]}") $remedy"
+    fi
+
+    if [ -n "$polish_reason" ]; then
+      deny "$polish_reason"
     fi
 
     advise "Creating or editing a PR. Follow the soong manage-pr skill for the title format and description style, and write the PR record it defines. Invoke it now if it is not already loaded."
@@ -187,7 +284,12 @@ esac
 case "$cmd" in
   *"git commit"*)
     require_scope="$(scope_rule)"
-    if [ -n "$require_scope" ]; then
+    # "unconfigured" is excluded alongside the empty string on purpose. The PR
+    # branch denies on it, and a commit must not: this hook runs on every repo
+    # on the machine, and denying `git commit -m "wip"` in each one the user
+    # never set up is how a guard gets turned off entirely. A PR is the
+    # deliberate, low-frequency moment where demanding setup is proportionate.
+    if [ -n "$require_scope" ] && [ "$require_scope" != "unconfigured" ]; then
       # Generated and reused subjects are exempt. git writes "fixup!"/"squash!"
       # itself and a later rebase absorbs them, and --amend with no -m reuses a
       # message that is not in this command. Denying either would break the

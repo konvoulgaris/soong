@@ -44,11 +44,20 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
   setup refuses to overwrite one.
 - **Exit 2** — not inside a git repository, or a usage error. Report it and stop.
 
-**Step B, `get`:** read `roadmapDb`, `taskDb`, and `taskTemplate` from the JSON.
+**Step B, `get`:** read `useNotion`, `roadmapDb`, `taskDb`, and `taskTemplate`
+from the JSON.
 
-A non-zero exit here is a bug, not a user problem, because Step A just confirmed
-the keys exist. Report the exit code and stop. Do not run setup again: the state
-that produced this is not one setup can resolve.
+**`useNotion` false means this repo does not use Notion at all**, and exit 0 from
+Step A does not distinguish that from a configured one: false satisfies the
+capability precisely so the user stops being asked. Check it here. Say this repo
+is not tracked on Notion, so `/architect` does not apply, and **stop**. Do not
+invoke setup: nothing is missing, and the user already answered this. Changing
+that answer is `/soong-setup notion`, at the user's request, not a repair this
+skill performs.
+
+Otherwise read the ids. A non-zero exit here is a bug, not a user problem,
+because Step A just confirmed the keys exist. Report the exit code and stop. Do
+not run setup again: the state that produced this is not one setup can resolve.
 
 `check notion` exit 3 does not mean the repo has never been set up. It means the
 Notion keys are missing, which is also true of a repo configured for commits

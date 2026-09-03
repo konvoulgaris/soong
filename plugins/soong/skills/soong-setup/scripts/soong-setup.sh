@@ -4,11 +4,17 @@
 #   soong-setup.sh get [project]
 #   soong-setup.sh check [capability] [--project NAME]
 #   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
-#                     [--require-scope true|false] [project]
+#                     [--require-scope true|false] [--use-notion true|false]
+#                     [project]
 #
 # Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 # Shape:  { "<project>": { roadmapDb, taskDb, taskTemplate, requireScope,
-#                          updatedAt } }
+#                          useNotion, updatedAt } }
+#
+# useNotion false satisfies the notion capability on its own: it is how a repo
+# says it has no Notion side, so check stops reporting the databases as missing.
+# Passing a database id implies useNotion true, and false alongside one is a
+# usage error rather than a silent contradiction.
 #
 # set merges into the existing record: it writes only the keys it was given, so
 # configuring one capability never clears another. At least one flag is needed.
@@ -33,7 +39,8 @@ Read or write soong's per-repo configuration.
   soong-setup.sh get [project]
   soong-setup.sh check [capability] [--project NAME]
   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
-                    [--require-scope true|false] [project]
+                    [--require-scope true|false] [--use-notion true|false]
+                    [project]
 
 Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 get exits 3 when the project has no mapping, so a caller can branch on it.
@@ -41,6 +48,8 @@ check exits 3 when a capability's required keys are absent, 0 when they are all
 present, and 2 for an unknown capability. With no capability it sweeps all of
 them. Capabilities: notion, commits.
 set merges: it writes only the keys you pass, and needs at least one flag.
+--use-notion false records that the repo has no Notion side, which satisfies the
+notion capability without any database id.
 EOF
 }
 
@@ -159,11 +168,11 @@ case "$cmd" in
     ;;
 
   set)
-    roadmap=""; task=""; template=""; template_seen=0; scope=""
+    roadmap=""; task=""; template=""; template_seen=0; scope=""; usenotion=""
     project=""; have_project=0
     while [ $# -gt 0 ]; do
       case "$1" in
-        --roadmap-db|--task-db|--task-template|--require-scope)
+        --roadmap-db|--task-db|--task-template|--require-scope|--use-notion)
           flag="$1"; shift
           [ $# -gt 0 ] || die "$flag needs a value" 2
           case "$1" in -*) die "$flag needs a value, got '$1'" 2 ;; esac
@@ -175,6 +184,12 @@ case "$cmd" in
               case "$1" in
                 true|false) scope="$1" ;;
                 *) die "--require-scope takes true or false, got '$1'" 2 ;;
+              esac
+              ;;
+            --use-notion)
+              case "$1" in
+                true|false) usenotion="$1" ;;
+                *) die "--use-notion takes true or false, got '$1'" 2 ;;
               esac
               ;;
           esac
@@ -189,6 +204,13 @@ case "$cmd" in
             *) die "--require-scope takes true or false, got '$scope'" 2 ;;
           esac
           ;;
+        --use-notion=*)
+          usenotion="${1#--use-notion=}"
+          case "$usenotion" in
+            true|false) ;;
+            *) die "--use-notion takes true or false, got '$usenotion'" 2 ;;
+          esac
+          ;;
         -*) die "unknown flag: $1" 2 ;;
         *)
           [ "$have_project" -eq 0 ] || die "unexpected extra argument: $1" 2
@@ -201,8 +223,15 @@ case "$cmd" in
     # No flag is individually required any more: a repo may configure the
     # commits capability without ever supplying a Notion database. But a set
     # with nothing to set is a usage error, not a no-op write.
-    [ -n "$roadmap$task$template$scope" ] || [ "$template_seen" -eq 1 ] \
+    [ -n "$roadmap$task$template$scope$usenotion" ] || [ "$template_seen" -eq 1 ] \
       || die "set needs at least one flag" 2
+
+    # --use-notion false and a database id contradict each other, and silently
+    # honouring one would leave the config saying the opposite of what the caller
+    # asked. Refuse instead of guessing which half was meant.
+    if [ "$usenotion" = "false" ] && [ -n "$roadmap$task$template" ]; then
+      die "--use-notion false cannot be combined with a database or template id" 2
+    fi
 
     command -v jq >/dev/null || die "jq is required"
     migrate_legacy
@@ -218,8 +247,12 @@ case "$cmd" in
     tmp="$(mktemp "$dir/.soong.XXXXXX")" || die "cannot create a temp file in $dir"
     trap 'rm -f "$tmp"' EXIT
 
+    # Supplying a database id is itself an answer to the notion question, so it
+    # sets useNotion true. Otherwise a repo could hold both a roadmapDb and
+    # useNotion false, and every reader would have to decide which one wins.
     jq --arg p "$project" --arg r "$roadmap" --arg k "$task" --arg tpl "$template" \
-       --arg scope "$scope" --argjson tplseen "$template_seen" \
+       --arg scope "$scope" --arg usenotion "$usenotion" \
+       --argjson tplseen "$template_seen" \
        --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
        '(.[$p] //= {})
         | (if ($r | length) > 0 then .[$p].roadmapDb = $r else . end)
@@ -228,6 +261,9 @@ case "$cmd" in
            then .[$p].taskTemplate = (if ($tpl | length) > 0 then $tpl else null end)
            else . end)
         | (if ($scope | length) > 0 then .[$p].requireScope = ($scope == "true") else . end)
+        | (if ($usenotion | length) > 0 then .[$p].useNotion = ($usenotion == "true")
+           elif ($r | length) > 0 or ($k | length) > 0 then .[$p].useNotion = true
+           else . end)
         | .[$p].updatedAt = $t' "$file" > "$tmp" || die "failed to build the new config"
     chmod 600 "$tmp" 2>/dev/null || true
     mv "$tmp" "$file" || die "failed to write $file"
@@ -293,6 +329,23 @@ case "$cmd" in
     # commits capability, and a jq -e test would read it as missing.
     missing_for() { # missing_for <capability> -> prints missing key names
       local c="$1" k out=""
+
+      # notion is answerable two ways: the databases, or an explicit "this repo
+      # does not use Notion". Without that second answer a repo that genuinely
+      # has no Notion side reports "missing" for good, and every skill that
+      # checks keeps sending the user back to a setup they already completed --
+      # an unanswerable prompt is how a check gets ignored.
+      #
+      # useNotion true is not a substitute for the ids. It says the repo does use
+      # Notion, so the databases are still required and still reported missing.
+      if [ "$c" = "notion" ] && [ -n "$src" ] \
+        && jq -e --arg p "$project" \
+              '(.[$p] // {}) | has("useNotion") and (.useNotion | not)' \
+              "$src" >/dev/null 2>&1; then
+        printf ''
+        return 0
+      fi
+
       for k in $(required_keys "$c"); do
         if [ -z "$src" ] \
           || ! jq -e --arg p "$project" --arg k "$k" \
