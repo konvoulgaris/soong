@@ -66,6 +66,18 @@ bullets. No section-header boilerplate unless the repo's PR template requires it
   opens over unfinished code, or the caller is finishing an operation of its own.
   Absent, polish runs whenever `HEAD` does not carry its trailer.
 
+  The PR-guard hook reads this flag off the raw command line to skip its own
+  trailer check, so it must appear in the command you run. `gh` rejects it as an
+  unknown flag, so append it as a trailing shell comment, which `gh` never sees:
+
+  ```bash
+  gh pr create --title "..." --body "..."  # --no-polish
+  ```
+
+  Never write that comment to quiet a hook denial. It records a decision the
+  caller already made, and synthesising one turns the single documented escape
+  hatch into a way around the check.
+
 When no argument is given, behave interactively: surface the drafted title and
 description and let the user adjust before running `gh`.
 
@@ -79,6 +91,14 @@ description and let the user adjust before running `gh`.
    edit that only rewords an existing pull request's title or body. The user
    asked for wording, and rewriting code behind that ask is a change nobody
    requested.
+
+   It applies to an already-open pull request too, when `HEAD` carries no
+   trailer because polish never ran at create time. The trailer is a fact about
+   the code, not about when the pull request was opened, so an open PR whose
+   code was never reviewed is the same case as an unopened one. Polish it, push,
+   and say in one line that the branch was polished and the PR carries an extra
+   commit. Announce it, do not ask: the user asked for work on this pull
+   request, and this step is part of that work.
 
    Check the marker `polish` writes, on `HEAD` alone:
 
@@ -94,6 +114,14 @@ description and let the user adjust before running `gh`.
    not re-derive one. Do not ask the user first,
    and do not ask for a Notion card first. Polish rewrites code, so a card
    resolved before it runs is resolved against code that is about to change.
+
+   "Do not ask" is the authorization. Polish rewrites code and commits, and this
+   step is where the user granted that — weighing it again at run time is
+   re-litigating a settled decision, not caution. The plugin's PR-guard hook
+   enforces it: a `gh pr create` or `gh pr edit` whose `HEAD` carries no trailer
+   is denied, so asking for permission here does not lead to a working `gh` call
+   anyway. When the hook denies with that reason, run polish. Do not ask, and do
+   not reach for `--no-polish`.
 
    If polish stops on a failing check, stop here too. Report what polish
    reported and do not open the PR. A branch that fails its own check is not

@@ -153,12 +153,16 @@ Rules for the report:
 
 ## Rules
 
-The steps state their own guards. These three fail silently and across files,
-so check them before every commit:
+The steps state their own guards. These fail silently and across files, so
+check them before every commit:
 
 - Never `git add -A` or `git commit -a`. Stage by path.
-- Never omit the `Polish-passes` trailer. It is how a caller knows polish ran.
+- Never omit the `Polish-passes` trailer. It is how a caller knows polish ran,
+  and the PR-guard hook denies a `gh pr create` or `gh pr edit` without it.
 - Never add a generated-by footer or a Claude attribution tag.
+- Never ask whether to run. Invoking this skill is the authorization: it
+  rewrites code and commits by design, and that is what the user chose. An
+  already-open pull request does not change this — polish it and say so.
 
 ## Errors
 

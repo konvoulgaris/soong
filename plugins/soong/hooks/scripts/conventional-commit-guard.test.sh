@@ -210,6 +210,79 @@ do
   fi
 done
 
+# --- the polish precondition ------------------------------------------------
+# The guard denies a PR create/edit whose HEAD carries no Polish-passes trailer.
+# These need real commits, and the main fixture is deliberately commit-less (it
+# is what exercises the fail-open path above), so they run in a repo of their own
+# and this one returns to the fixture afterwards.
+polish_repo="$XDG_DATA_HOME/polish"
+git init -q "$polish_repo" 2>/dev/null
+git -C "$polish_repo" config user.email t@example.com
+git -C "$polish_repo" config user.name t
+
+# An unborn HEAD must fail open: unreadable is not the same as absent, and a
+# guard that denies every PR in a fresh repo is worse than one that stops
+# checking.
+cd "$polish_repo" || exit 1
+check advise 'polish: unborn HEAD falls open' 'gh pr create --title "feat: thing" --body "x"'
+
+git commit -q --allow-empty -m "feat: work"
+check deny   'polish: no trailer on HEAD'     'gh pr create --title "feat: thing" --body "x"'
+check deny   'polish: no trailer on edit'     'gh pr edit 5 --title "feat: thing"'
+check advise 'polish: --no-polish opts out'   'gh pr create --title "feat: thing" --body "x" --no-polish'
+
+# The deny must name the trailer, so the reason tells the reader what to run
+# rather than only that something is wrong.
+if run 'gh pr create --title "feat: thing"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason | test("Polish-passes")' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  polish deny did not name the trailer\n'
+fi
+
+# A correct title denied only on the trailer must NOT be told to fix the title.
+# That tail belongs to the title and footer reasons; over a good title it sends
+# the reader to edit something that was already right.
+if run 'gh pr create --title "feat(api): thing" --body "x"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason
+            | test("fix the title") | not' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  polish-only deny told the reader to fix the title\n'
+fi
+
+# The opt-out rides as a trailing shell comment, because `gh` rejects it as an
+# unknown flag. The hook reads the raw command string, so it still sees it.
+check advise 'polish: comment-form opt-out' 'gh pr create --title "feat: thing" --body "x"  # --no-polish'
+
+git commit -q --allow-empty -m "refactor: polish" -m "Polish-passes: review,simplify"
+check advise 'polish: trailer on HEAD'        'gh pr create --title "feat: thing" --body "x"'
+
+# Anchored on HEAD alone. A branch that polished and then committed more work is
+# stale, and a range check would wrongly pass it -- the exact case the trailer
+# check exists to catch.
+git commit -q --allow-empty -m "feat: more work"
+check deny   'polish: stale after new commit' 'gh pr create --title "feat: thing" --body "x"'
+
+# A title problem and a missing trailer are both reported, not just the first.
+git commit -q --allow-empty -m "feat: work"
+if run 'gh pr create --title "nope"' \
+   | jq -e '.hookSpecificOutput.permissionDecisionReason
+            | test("Conventional Commits") and test("Polish-passes")' >/dev/null; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL  polish deny did not combine with the title reason\n'
+fi
+
+# The precondition is a PR-branch rule only. A commit must not be judged on it,
+# or polish could never make the commit that clears it.
+check silent 'polish: commit unaffected'      'git commit -m "feat: thing"'
+
+cd "$fixture" || exit 1
+
 # The hook finds soong-setup.sh relative to its own path. A directory move must
 # fail here rather than silently disabling the scope rule.
 if [ -f "$setup" ]; then

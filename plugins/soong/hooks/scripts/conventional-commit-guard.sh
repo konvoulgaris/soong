@@ -125,6 +125,31 @@ body_lines() {
     -e "s/\\\$\(cat <<-?'?[A-Za-z_]+'?/\n/g"
 }
 
+# Has the polish skill run on the current HEAD?
+#
+# The polish skill writes a `Polish-passes` trailer on the commit it makes, and
+# manage-pr compose step 0 reads that trailer to decide whether to run polish
+# before opening a pull request. That rule lived only in prose, which is exactly
+# the kind of instruction an agent talks itself out of when the situation looks
+# slightly off-spec. Checking it here turns it into a precondition: the `gh`
+# call fails until polish has run, so there is nothing left to rationalise.
+#
+# Anchored on HEAD alone, not a range, matching the skill: a range would pass a
+# branch that polished and then committed more work unreviewed, which is the
+# stale case the check exists to catch.
+#
+# Fails open on everything -- an unborn HEAD, a non-repo cwd, a missing git.
+# `git log -1 HEAD` exits 128 in a repo with no commits, and a guard that denies
+# every `gh pr create` because it could not read a trailer is worse than one that
+# quietly stops checking. Returns 1 (present, or unknowable) by default and 0
+# only on a positive read of an absent trailer.
+polish_missing() {
+  command -v git >/dev/null 2>&1 || return 1
+  local trailer
+  trailer="$(git log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD 2>/dev/null)" || return 1
+  [ -z "$(printf '%s' "$trailer" | tr -d '[:space:]')" ]
+}
+
 deny() {
   printf '%s' "$1" \
     | jq -Rs '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:.}}'
@@ -168,8 +193,31 @@ EOF
       reasons+=("PR must NOT contain a generated-by footer (no 'Generated with', 'Co-Authored-By', or robot emoji).")
     fi
 
+    # Everything above is a problem with the strings in this command, and the
+    # tail below tells the reader to fix them. The polish precondition is not:
+    # the command can be perfect and still be denied because the code behind it
+    # was never reviewed. So it is collected separately, and carries its own
+    # remedy -- told to "fix the title and description" over a correct title, a
+    # reader edits something that was already right.
+    #
+    # Skipped when the command carries --no-polish, the same escape hatch
+    # compose documents: the caller states the branch's code is not what this
+    # pull request is about. `gh` rejects that as an unknown flag, so compose
+    # appends it as a trailing shell comment -- `gh` never sees it, and this
+    # hook, which reads the raw command string, does.
+    polish_reason=""
+    if ! printf '%s' "$cmd" | grep -qE -- '--no-polish' && polish_missing; then
+      polish_reason="HEAD carries no 'Polish-passes' trailer, so the polish skill has not run on this code. Run the soong polish skill now -- it is unattended and needs no approval -- then retry. It rewrites code and commits by design; that is what the skill is for, and it does not need separate approval. Append '# --no-polish' only when the branch's code is not what this PR is about."
+    fi
+
     if [ ${#reasons[@]} -gt 0 ]; then
-      deny "$(join_reasons "${reasons[@]}") Invoke the soong manage-pr skill, which defines these conventions, to fix the title and description, then retry."
+      remedy="Invoke the soong manage-pr skill, which defines these conventions, to fix the title and description, then retry."
+      [ -n "$polish_reason" ] && remedy="$remedy $polish_reason"
+      deny "$(join_reasons "${reasons[@]}") $remedy"
+    fi
+
+    if [ -n "$polish_reason" ]; then
+      deny "$polish_reason"
     fi
 
     advise "Creating or editing a PR. Follow the soong manage-pr skill for the title format and description style, and write the PR record it defines. Invoke it now if it is not already loaded."
