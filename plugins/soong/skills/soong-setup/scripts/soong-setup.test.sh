@@ -279,6 +279,50 @@ check "require-scope yes fails" 2 "$(run set --require-scope yes badscope)"
 check "require-scope 1 fails"   2 "$(run set --require-scope 1 badscope)"
 check "bad require-scope wrote nothing" 3 "$(run get badscope)"
 
+# --use-notion: the explicit answer to "does this repo use Notion at all"
+check "use-notion takes true or false" 2 "$(run set --use-notion maybe badnotion)"
+check "use-notion needs a value"       2 "$(run set --use-notion badnotion2)"
+check "bad use-notion wrote nothing"   3 "$(run get badnotion)"
+
+# false satisfies notion on its own. Without this a repo with no Notion side
+# reports missing for good, and every skill that checks keeps sending the user
+# back to a setup they already finished.
+check "use-notion false ok"        0 "$(run set --use-notion false nonotion)"
+check "use-notion false stored"    false "$(bash "$script" get nonotion | jq -r .useNotion)"
+check "use-notion false satisfies notion" 0 "$(run check notion --project nonotion)"
+check "no databases were invented" false "$(bash "$script" get nonotion | jq -r 'has("roadmapDb")')"
+# It settles notion only. commits is still unanswered, and the sweep says so.
+check "use-notion false leaves commits" 3 "$(run check commits --project nonotion)"
+
+# true is not a substitute for the ids: it says the repo does use Notion, so
+# they are still required.
+check "use-notion true ok"          0 "$(run set --use-notion true yesnotion)"
+check "use-notion true still needs dbs" 3 "$(run check notion --project yesnotion)"
+
+# A database id is itself an answer, so it records true. Otherwise a repo could
+# hold both a roadmapDb and useNotion false and every reader would have to pick.
+check "a db id implies useNotion"   0 "$(run set --roadmap-db R --task-db T implied)"
+check "implied useNotion is true"   true "$(bash "$script" get implied | jq -r .useNotion)"
+check "implied satisfies notion"    0 "$(run check notion --project implied)"
+
+# false alongside an id contradicts itself. Refuse rather than honour one half.
+check "false plus a db exits 2"     2 "$(run set --use-notion false --roadmap-db R contra)"
+check "contradiction wrote nothing" 3 "$(run get contra)"
+
+# Flipping back to true re-opens the requirement rather than stranding the repo
+# in a satisfied state it no longer means.
+bash "$script" set --use-notion false flip >/dev/null 2>&1
+bash "$script" set --use-notion true  flip >/dev/null 2>&1
+check "flip to true reopens notion" 3 "$(run check notion --project flip)"
+
+# The merge rule holds for this key too: setting one capability never clears
+# the other.
+bash "$script" set --use-notion false mergenotion >/dev/null 2>&1
+bash "$script" set --require-scope true mergenotion >/dev/null 2>&1
+recn="$(bash "$script" get mergenotion)"
+check "useNotion survived a commits set" false "$(jq -r .useNotion    <<<"$recn")"
+check "scope survived a notion set"      true  "$(jq -r .requireScope <<<"$recn")"
+
 # set with no flags at all is a usage error, not a no-op write
 check "set with no flags exits 2" 2 "$(run set noflags)"
 check "set with no flags wrote nothing" 3 "$(run get noflags)"
