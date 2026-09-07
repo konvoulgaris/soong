@@ -12,7 +12,16 @@ gh auth status >/dev/null 2>&1 \
 
 command -v jq >/dev/null 2>&1 || die "jq is not installed." 2
 
-SENSITIVE='(^|/)(auth|crypto|migrations?|migrate|payments?|billing|secrets?)(/|$)|(^|/)[^/]*auth[^/]*$|^\.github/workflows/|(^|/)Dockerfile|\.lock$|(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|requirements[^/]*\.txt)$'
+# Sensitive paths, in three idioms. Add to the fragment that matches your
+# intent - mixing them up is how a path silently stops matching.
+#   DIRS  - a whole path segment:      src/auth/x.ts, but never src/oauthly.ts
+#   NAMES - a substring of a filename: src/oauth.ts, secrets.tf, payment-intent.ts
+#   LOCKS - a suffix or exact filename
+SENS_DIRS='(^|/)(auth|crypto|migrations?|migrate|payments?|billing|secrets?)(/|$)'
+SENS_NAMES='(^|/)[^/]*(auth|secret|payment|billing)[^/]*$'
+SENS_LOCKS='\.lock$|(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|requirements[^/]*\.txt)$'
+SENSITIVE="$SENS_DIRS|$SENS_NAMES|^\.github/workflows/|(^|/)Dockerfile|$SENS_LOCKS"
+
 LOWSIGNAL='(^|/)(tests?|docs|fixtures|__snapshots__)/|[._-]test\.|[._-]spec\.|\.md$|\.snap$'
 
 # Reads one PR JSON object on stdin, prints "<score> <classification>".
@@ -53,7 +62,10 @@ urls="$(gh search prs --review-requested=@me --state=open --json url \
 rows=""
 while IFS= read -r url; do
   [ -n "$url" ] || continue
-  if ! meta="$(gh pr view "$url" --json "$FIELDS" 2>/dev/null)"; then
+  # Exit 0 with non-JSON output must land here too, not silently drop the row:
+  # --argjson score "" is a hard jq failure, and without -e nothing notices.
+  if ! meta="$(gh pr view "$url" --json "$FIELDS" 2>/dev/null)" \
+     || ! printf '%s' "$meta" | jq -e . >/dev/null 2>&1; then
     # One unreadable pull request must not kill the queue.
     rows="$rows$(jq -cn --arg u "$url" '{url:$u, unreadable:true}')
 "
@@ -64,6 +76,15 @@ while IFS= read -r url; do
     continue
   fi
   sc="$(printf '%s' "$meta" | score_one)"
+  # Both expansions below return the whole string when it holds no space, which
+  # would put the score in the classification. Treat a degraded score as
+  # unreadable rather than emitting a numeric classification.
+  case "$sc" in
+    [0-9]*" "*) : ;;
+    *) rows="$rows$(jq -cn --arg u "$url" '{url:$u, unreadable:true}')
+"
+       continue ;;
+  esac
   rows="$rows$(printf '%s' "$meta" | jq -c \
       --argjson score "${sc%% *}" --arg class "${sc#* }" \
       '{url, title, body, files: [.files[]?.path], churn: ((.additions//0)+(.deletions//0)),

@@ -161,5 +161,67 @@ check "drafts excluded by default" 0 "$(bash "$script" | jq '.prs | length')"
 check "drafts included on request" 1 \
   "$(bash "$script" --include-drafts | jq '.prs | length')"
 
+# --- regressions the checks above do not pin -------------------------------
+# A sensitive FILENAME, not just a sensitive directory. The plan's glob list
+# includes **/secrets* and **/payment*/**, and a whole-segment-only regex
+# silently misses secrets.tf and payment-intent.ts.
+for f in secrets.tf src/payment-intent.ts src/oauth.ts; do
+  check "sensitive filename $f is not Review now" "Requires thinking" \
+    "$(score_one "$(printf '{"additions":4,"deletions":0,
+       \"files\":[{\"path\":\"%s\"}],
+       \"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}]}' "$f")" | cut -d' ' -f2-)"
+done
+
+# SKIPPED is green. Treating it as a failure would mark most PRs as needing
+# thought, which is the classification this tool exists to keep meaningful.
+skip='{"additions":3,"deletions":0,"changedFiles":1,
+  "files":[{"path":"src/c.ts"}],
+  "statusCheckRollup":[{"conclusion":"SKIPPED"},{"conclusion":"SUCCESS"}]}'
+check "SKIPPED counts as green" "Review now" "$(score_one "$skip" | cut -d' ' -f2-)"
+
+# Blast radius contributes: same churn, more top-level directories, higher score.
+one='{"additions":40,"deletions":0,"files":[{"path":"a/x.ts"},{"path":"a/y.ts"}],
+  "statusCheckRollup":[{"conclusion":"SUCCESS"}]}'
+two='{"additions":40,"deletions":0,"files":[{"path":"a/x.ts"},{"path":"b/y.ts"}],
+  "statusCheckRollup":[{"conclusion":"SUCCESS"}]}'
+check "blast radius raises the score" yes \
+  "$([ "$(score_one "$two" | cut -d' ' -f1)" -gt "$(score_one "$one" | cut -d' ' -f1)" ] \
+     && echo yes || echo no)"
+
+# A gh that exits 0 with garbage must not make a pull request disappear.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs") echo '[{"url":"https://github.com/o/r/pull/1"}]' ;;
+  "pr view") echo 'gh: this is not json'; exit 0 ;;
+esac
+SH
+out="$(bash "$script")"
+check "non-JSON gh output keeps the row" 1 "$(printf '%s' "$out" | jq '.prs | length')"
+check "non-JSON gh output marks it unreadable" true \
+  "$(printf '%s' "$out" | jq -r '.prs[0].unreadable')"
+
+# Unreadable rows sort last, which Task 4's SKILL.md relies on.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs") echo '[{"url":"https://github.com/o/r/pull/1"},{"url":"https://github.com/o/r/pull/2"}]' ;;
+  "pr view")
+    case "$3" in
+      *"/pull/1") exit 1 ;;
+      *"/pull/2")
+        echo '{"url":"https://github.com/o/r/pull/2","title":"t","body":"",
+          "additions":2,"deletions":0,"changedFiles":1,"files":[{"path":"src/c.ts"}],
+          "statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false,
+          "reviewDecision":"","updatedAt":"2026-09-01T00:00:00Z",
+          "author":{"login":"a"}}' ;;
+    esac ;;
+esac
+SH
+check "unreadable rows sort last" true \
+  "$(bash "$script" | jq -r '.prs[-1].unreadable')"
+
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1
