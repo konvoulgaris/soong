@@ -141,5 +141,13 @@ check "exported const name is whole" "MAX_RETRIES" "$(name_of 'diff --git a/a.ts
 @@ -1 +1 @@
 +export const MAX_RETRIES = 3;')"
 
+# The prefilter greps case-insensitively, so the loop must too: a capitalised
+# route reached the loop and then fell through every branch, silently.
+check "uppercase route method" "/api/v2/y" "$(name_of 'diff --git a/s.go b/s.go
+--- a/s.go
++++ b/s.go
+@@ -1 +1 @@
++router.Post("/api/v2/y")')"
+
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1

@@ -66,7 +66,9 @@ while IFS= read -r line; do
     [ -n "$k" ] && add_entry "$k" schema "$([ "$side" = after ] && echo added || echo removed)" "" "$body"
     continue
   fi
-  if [[ "$body" =~ $route_re ]]; then
+  # Case-insensitive, matching the prefilter: Go and .NET routers
+  # capitalise the method (app.GET, router.Post).
+  if [[ "$(printf '%s' "$body" | tr '[:upper:]' '[:lower:]')" =~ $route_re ]]; then
     r="$(printf '%s' "$body" | sed -nE 's|.*["'"'"']([/][^"'"'"']*)["'"'"'].*|\1|p')"
     [ -n "$r" ] && add_entry "$r" route "$([ "$side" = after ] && echo added || echo removed)" "" "$body"
     continue

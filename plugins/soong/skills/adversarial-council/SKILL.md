@@ -105,12 +105,15 @@ pair is a verdict you cannot resolve.
 Do not renumber for the rebuttal round. A contested subset keeps its original
 labels, so `F4` is the same finding in both rounds.
 
-Each judge gets: the whole labelled finding set, the spec path, its own lens
-named explicitly, and that lens's evidence.
+Each judge gets: the whole labelled finding set, the statement of intent - the
+spec path in spec mode, or the pull request URL, title, and body in PR mode -
+its own lens named explicitly, and that lens's evidence.
 
 * **Verifier lens** - also gets the files each finding touches.
-* **Architect lens** - also gets the pull request stack, in order, with each
-  step's stated dependency.
+* **Architect lens** (spec mode) - also gets the pull request stack, in order,
+  with each step's stated dependency.
+* **Integration lens** (PR mode, in place of the architect lens) - also gets
+  the change surface and the dependents you found for it, not the diff itself.
 
 Name the lens in the prompt. The agent file describes both, and a judge not
 told which one it holds will try to hold both, which is the one thing that
