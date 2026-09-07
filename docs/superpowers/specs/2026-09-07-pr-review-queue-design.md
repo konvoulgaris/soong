@@ -282,23 +282,32 @@ council file would otherwise apply them.
 
 The report has three parts:
 
-1. **The concerns table**, one row per surviving finding: location, the
-   concern, its failure scenario, and the recommended fix where the council
-   supplied one. `auto-resolve` findings fill the fix column; `needs-user` and
-   plain findings leave it empty. Rows for findings the judges linked as
+1. **The concerns table**, one row per finding the council did not drop:
+   location, the concern, its failure scenario, and the recommended fix where
+   the council supplied one. `auto-resolve` findings fill the fix column;
+   everything else leaves it empty. Rows for findings the judges linked as
    dependent are adjacent, dependency first.
 2. **A blocking-drop notice**, one line per `blocking` finding both judges
    dropped, where any exist.
 3. **One status.**
 
+**Every finding the council did not `drop` is a row.** That is `auto-resolve`,
+`needs-user`, findings the judges stayed split on, findings either judge
+abstained on, findings left unjudged by a failed judge, and every finding in an
+unfiltered handback. Component 4 gives the per-case row contents. `drop` is the
+only verdict that removes a finding, and a dropped `blocking` finding still
+leaves a notice.
+
 The status:
 
-* **`Reviewable`** — no concern survived and no blocking-drop notice was
+* **`Reviewable`** — the table is empty and no blocking-drop notice was
   printed.
-* **`Concerns`** — at least one concern survived, or a blocking-drop notice was
-  printed.
+* **`Concerns`** — the table has at least one row, or a blocking-drop notice
+  was printed.
 
-An `auto-resolve` or `needs-user` finding counts as a surviving concern.
+Stating the status against the rendered table rather than against verdict
+categories is deliberate: it cannot drift out of step with the row rule above,
+and it has no branch that a new verdict outcome could fall through.
 
 No status is reported when the evidence was incomplete. See Failure below.
 
@@ -330,7 +339,7 @@ PR mode re-splits the evidence along an axis a diff has:
   whether it does what the pull request claims.
 
 **The change surface** is what the integration judge receives in place of the
-diff. `review-pr` derives it in Step 2, from the same diff it gives the reviewer
+diff. `review-pr` derives it in Step 2b, from the same diff it gives the reviewer
 agents, and passes it to the council in Step 3.
 
 The test for inclusion is one question: **can code outside the changed file
@@ -345,7 +354,8 @@ settles uniformly.
 
 Included, when the test passes:
 
-* Changed file paths, always.
+* Changed file paths, always. A path entry carries only the path; the entry
+  format below applies to named declarations.
 * Function, method, and class signatures reachable from outside the file.
 * Types, interfaces, and schemas.
 * Configuration keys, environment variable names, feature flags.
@@ -527,6 +537,37 @@ findings appear in `review-pr`'s concerns table like any other survivor, and
 both count toward `Concerns`. `auto-resolve` fills the recommended-fix column;
 `needs-user` leaves it empty.
 
+**Where a finding with no shared verdict lands.** The three verdicts above are
+the outcomes of resolution rule 3, where both judges agreed. Rules 1, 2, and 4
+— both judges abstain, either judge abstains, and verdicts still differ after
+the rebuttal — produce no verdict to act on. So do the judge-failure rules,
+which make *every* finding contested when one judge fails.
+
+All of them are concern rows, and all count toward `Concerns`:
+
+* **Still split after the rebuttal.** One row, showing **both** judges'
+  positions rather than a merged summary, per the council's existing rule. A
+  real disagreement between two informed judges is information.
+* **Abstained, on either side or both.** One row, carrying each judge's stated
+  reason and what it said it would need.
+* **Contested because a judge failed.** One row, saying the finding was not
+  judged and why.
+
+The recommended-fix column is empty for all three.
+
+This is spelled out because the omission pointed the wrong way. An implementer
+who saw only rule 3's outcomes mapped could read "no shared verdict" as "did
+not survive", and print `Reviewable` on a pull request whose one finding was
+the one the judges could not settle. The council's own principle governs here:
+a finding it cannot judge is never resolved without the user seeing it. In a
+report, being seen means being a row.
+
+**Where unfiltered handbacks land.** When the council goes over the cap or
+fails outright, it returns every finding with no verdicts at all. Each becomes
+a concern row, marked unfiltered, and the status is `Concerns`. The arithmetic
+would force that anyway — an over-cap set is at least 16 findings and a failure
+handback at least one — but the rule is stated rather than derived.
+
 This is explicit because the alternative is the worst bug this design could
 have: a real bug is given a verdict that means "not a plain concern", degrades
 to a report, and — with no home in the output — disappears, yielding
@@ -644,17 +685,25 @@ presented as complete.
 | Workspace repository unresolvable — no `origin`, or a local-only or bare checkout | Hard stop at Step 0, same as a mismatch. Say the workspace repository could not be resolved and name the pull request's. Never proceed on the assumption that an unresolvable workspace is the right one. |
 | Pull request not found, or no permission | Stop, and say which of the two it was. |
 | Empty or generated-only diff | Report it, skip the council. |
-| One reviewer agent fails | Continue with the survivor's findings. Say the review is partial and which lens is missing. |
+| One reviewer agent fails | Continue with the survivor's findings, and report them. Say the review is partial and which agent is missing. `Concerns` may be printed. **`Reviewable` may not** — it is replaced by `Partial: no concerns found by <agent>`. |
 | Both reviewer agents fail | Report the failure. No status: neither `Reviewable` nor `Concerns`. |
 | Council fails | Existing council rules apply: hand back every finding unfiltered, marked unfiltered. |
 
 Two principles, both inherited from the council's own design:
 
 * A failure never makes a finding disappear.
-* A failure never produces a clean-looking verdict from missing evidence. This
-  is why both reviewer agents failing yields no status at all: `Reviewable`
-  from a review that did not happen is the most costly output this skill could
-  produce.
+* A failure never produces a clean-looking verdict from missing evidence.
+
+The second principle is why the status is withheld in the two failure rows
+above, and why the withholding is asymmetric. `Concerns` from a partial review
+is true — a concern was found, and finding more would not change that.
+`Reviewable` from a partial review is a claim about what is *not* there, and a
+review missing a whole class of findings cannot support it. A design-heavy pull
+request reviewed by the correctness agent alone would otherwise print
+`Reviewable` having never examined a contract change.
+
+Both agents failing yields no status at all, because then even `Concerns` has
+nothing behind it.
 
 ## Flow
 
@@ -759,11 +808,17 @@ handing the council a synthetic finding set rather than skipping the step.
 
 ## Open questions
 
-None blocking, and none deferred. The earlier draft deferred whether the
-council's Interactions lists and judge-failure rules carry to PR mode; both are
-now settled in Component 4 under "What does not change" — deduplication and the
-judge-failure rules carry unchanged, and Interactions dependency entries carry
-with the user's answer as the mechanism that makes a finding moot.
+None blocking, and none deferred. An earlier draft deferred whether the
+council's Interactions lists and judge-failure rules carry to PR mode. Both are
+settled in Component 4 under "What does not change":
+
+* Deduplication carries: duplicate findings are one row.
+* The judge-failure rules carry unchanged, and Component 4 says where the
+  findings they leave contested go in the report.
+* Interactions **dependency** entries carry as row grouping and ordering only.
+  PR mode collects no answer and edits nothing, so no finding becomes moot and
+  none is skipped. Both findings are reported, adjacent, dependency first.
+* The `Asking the user` rules do not carry. PR mode reports rather than walks.
 
 One thing to watch rather than decide now:
 
@@ -804,14 +859,16 @@ council inside `review-pr`.** A private council would avoid touching
 `/architect`'s dependencies, but would duplicate the resolution rules, the
 rebuttal round, the Interactions handling, and the failure rules — all of which
 already work. Explicit arguments with behaviour-preserving defaults, plus the
-step 5 regression test, address the risk of the shared change.
+step 7 regression test, address the risk of the shared change.
 
 **Verifier plus integration lens, rejecting collapsed lenses and rejecting a
 code-blind intent lens.** Collapsed lenses would need no judge changes but
 would destroy the independence that makes `drop` meaningful. A second lens
 reading only the pull request description would preserve independence cheaply,
-but would abstain frequently, and abstentions all route to the user as
-questions — which converts a filtering skill into a question generator.
+but would abstain frequently. In a mode that reports rather than asks, every
+abstention becomes a row saying the lens could not judge the finding, which
+fills the table with non-findings and leaves the nitpick filtering to the
+verifier alone. A lens that mostly abstains is not a second opinion.
 
 **Explicit council arguments, rejecting an implicit mode inferred from the
 inputs.** Inference would need no changes at existing call sites, but would
