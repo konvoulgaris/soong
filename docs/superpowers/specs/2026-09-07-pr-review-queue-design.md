@@ -298,7 +298,7 @@ unfiltered handback. Component 4 gives the per-case row contents. `drop` is the
 only verdict that removes a finding, and a dropped `blocking` finding still
 leaves a notice.
 
-The status:
+The status, when both reviewer agents ran:
 
 * **`Reviewable`** — the table is empty and no blocking-drop notice was
   printed.
@@ -309,7 +309,11 @@ Stating the status against the rendered table rather than against verdict
 categories is deliberate: it cannot drift out of step with the row rule above,
 and it has no branch that a new verdict outcome could fall through.
 
-No status is reported when the evidence was incomplete. See Failure below.
+**When the evidence was incomplete, the status comes from the Failure table
+instead.** That is the whole of the status contract: these two values cover a
+full-evidence run, and Failure supplies the partial-evidence variants — a third
+rendered value when one reviewer agent failed, and no status at all when both
+did. `Concerns` is still reachable on partial evidence; `Reviewable` is not.
 
 ## Component 3: adversarial-judge lens changes
 
@@ -685,7 +689,7 @@ presented as complete.
 | Workspace repository unresolvable — no `origin`, or a local-only or bare checkout | Hard stop at Step 0, same as a mismatch. Say the workspace repository could not be resolved and name the pull request's. Never proceed on the assumption that an unresolvable workspace is the right one. |
 | Pull request not found, or no permission | Stop, and say which of the two it was. |
 | Empty or generated-only diff | Report it, skip the council. |
-| One reviewer agent fails | Continue with the survivor's findings, and report them. Say the review is partial and which agent is missing. `Concerns` may be printed. **`Reviewable` may not** — it is replaced by `Partial: no concerns found by <agent>`. |
+| One reviewer agent fails | Continue with the survivor's findings, and report them. Say the review is partial and which agent is missing. `Concerns` may be printed. **`Reviewable` may not** — where it would have been printed, render `Partial: no concerns from <surviving agent>; <failed agent> did not run` instead. Phrase it so the failed agent is never the subject of the no-concerns claim: it did not run, so it reported nothing either way. |
 | Both reviewer agents fail | Report the failure. No status: neither `Reviewable` nor `Concerns`. |
 | Council fails | Existing council rules apply: hand back every finding unfiltered, marked unfiltered. |
 
@@ -781,7 +785,8 @@ and the plan states these as concrete steps.
    reports both repository names, and dispatches nothing. Repeat in a directory
    with no `origin` and confirm the same stop.
 3. `/review-pr <url>` from the correct worktree, on a pull request with a known
-   real bug. Confirm the bug survives to the concerns table.
+   real bug. Confirm the bug survives to the concerns table and that the status
+   is `Concerns`.
 4. `/review-pr <url>` on a formatting-only pull request. Confirm `Reviewable`
    and an empty or near-empty table.
 5. `/review-pr <url>` on a pull request with a real bug that has one obvious
@@ -792,15 +797,23 @@ and the plan states these as concrete steps.
 6. `/review-pr <url>` on a pull request that produces a single `blocking`
    finding both judges drop. Confirm the notice prints and the status is
    `Concerns` despite an empty table.
-7. `/architect` on a throwaway feature. Confirm the council behaves identically
+7. `/review-pr <url>` with one reviewer agent forced to fail, on a pull request
+   with no concerns. Confirm the status is neither `Reviewable` nor a sentence
+   that reads as the failed agent having found nothing.
+8. `/architect` on a throwaway feature. Confirm the council behaves identically
    to before.
 
-Steps 2, 4, 5, and 6 are the ones that catch this design being wrong. Step 2
+Steps 2 and 4 through 7 are the ones that catch this design being wrong. Step 2
 tests the guard that makes `review-pr` safe. Step 4 tests the nitpick filter
-that is its whole reason for existing. Steps 5 and 6 test the three paths where
-a real finding could fall out of the output and yield `Reviewable` on a
-defective pull request — a degraded `auto-resolve`, a degraded `needs-user`, and
-a dropped blocker. Step 7 is the regression test for the three shared files.
+that is its whole reason for existing. Steps 5, 6, and 7 test the four paths
+where a real finding could fall out of the output, or a clean status be printed
+on incomplete evidence — a degraded `auto-resolve`, a degraded `needs-user`, a
+dropped blocker, and a partial review. Step 8 is the regression test for the
+three shared files.
+
+Those four are worth the staging effort because every review round of this spec
+found another instance of that one defect class. It is the failure this design
+is most likely to ship with.
 
 Step 6 is the hardest to stage, since it depends on the judges agreeing to drop
 something marked blocking. If a natural case cannot be found, verify it by
@@ -859,7 +872,8 @@ council inside `review-pr`.** A private council would avoid touching
 `/architect`'s dependencies, but would duplicate the resolution rules, the
 rebuttal round, the Interactions handling, and the failure rules — all of which
 already work. Explicit arguments with behaviour-preserving defaults, plus the
-step 7 regression test, address the risk of the shared change.
+final regression test against `/architect`, address the risk of the shared
+change.
 
 **Verifier plus integration lens, rejecting collapsed lenses and rejecting a
 code-blind intent lens.** Collapsed lenses would need no judge changes but
