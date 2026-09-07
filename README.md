@@ -28,3 +28,5 @@ them:
 - **soong-setup** — run `/soong-setup` once per repo. `/architect` and `/develop`
   need the Notion databases it records, and the `conventional-commit-guard` hook reads the commit
   scope rule it records.
+- **`gh` CLI** — `/review-pr-queue` and `/review-pr` call it directly to read
+  pull requests. Authenticate with `gh auth login`.
