@@ -126,5 +126,20 @@ check "sql created index" "idx_users_email schema" "$(kind_of 'diff --git a/m.sq
 @@ -1 +1 @@
 +CREATE UNIQUE INDEX idx_users_email ON users(email);')"
 
+# A config name must arrive whole. A greedy leading .* in the extractor
+# truncated SENS_DIRS to "IRS" and MAX_RETRIES to "IES" - the name reached the
+# integration judge as something no dependent search could ever match.
+name_of() { printf '%s\n' "$1" | bash "$script" | jq -r '.entries[0].name'; }
+check "config name is not truncated" "SENS_DIRS" "$(name_of 'diff --git a/a.sh b/a.sh
+--- a/a.sh
++++ b/a.sh
+@@ -1 +1 @@
++SENS_DIRS=(^|/)x')"
+check "exported const name is whole" "MAX_RETRIES" "$(name_of 'diff --git a/a.ts b/a.ts
+--- a/a.ts
++++ b/a.ts
+@@ -1 +1 @@
++export const MAX_RETRIES = 3;')"
+
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1

@@ -68,7 +68,7 @@ while IFS= read -r line; do
     continue
   fi
   if printf '%s' "$line" | grep -Eq "$const_re"; then
-    k="$(printf '%s' "$body" | sed -nE 's/.*[[:space:]]*([A-Z][A-Z0-9_]{2,})[[:space:]]*=.*/\1/p')"
+    k="$(printf '%s' "$body" | sed -nE 's/^[[:space:]]*(export[[:space:]]+)?(const|var|let)?[[:space:]]*([A-Z][A-Z0-9_]{2,})[[:space:]]*=.*/\3/p')"
     [ -n "$k" ] && add_entry "$k" config "$([ "$side" = after ] && echo added || echo removed)" "" "$body"
     continue
   fi
