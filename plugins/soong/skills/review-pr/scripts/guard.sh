@@ -15,12 +15,25 @@ command -v jq >/dev/null 2>&1 || die "jq is not installed." 2
 gh auth status >/dev/null 2>&1 \
   || die "gh is not authenticated. Run: gh auth login" 2
 
-pr="$(gh pr view "$target" --json headRepository,number,isDraft 2>/dev/null)" \
-  || die "cannot read $target. It may not exist, or you may not have access." 2
+# Ask for the url, not headRepository: on a pull request opened from a fork,
+# headRepository is the FORK. A reviewer sitting in the correct upstream
+# checkout would be refused, and told to go check out the contributor's fork -
+# which would put the wrong code on disk, the opposite of this guard's purpose.
+# The url is the canonical upstream location for fork and same-repo alike.
+# (gh pr view has no baseRepository field; asking for one is an error.)
+if ! pr="$(gh pr view "$target" --json url,number 2>/dev/null)" \
+   || ! printf '%s' "$pr" | jq -e . >/dev/null 2>&1; then
+  die "cannot read $target. It may not exist, or you may not have access." 2
+fi
 
-pr_repo="$(printf '%s' "$pr" | jq -r '.headRepository.nameWithOwner // empty')"
+pr_repo="$(printf '%s' "$pr" \
+  | jq -r '(.url | capture("//[^/]+/(?<r>[^/]+/[^/]+)/pull/").r) // empty' 2>/dev/null)"
 [ -n "$pr_repo" ] || die "could not resolve the pull request's repository." 2
-number="$(printf '%s' "$pr" | jq -r '.number')"
+
+# Guard the number too: exit 0 means "proceed", and the skill branches on this
+# JSON, so a null number would surface later as a confusing gh pr diff failure.
+number="$(printf '%s' "$pr" | jq -r '.number // empty')"
+[ -n "$number" ] || die "could not resolve the pull request's number." 2
 
 # An unresolvable workspace is a check that did not run, not one that passed.
 ws_repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" \
