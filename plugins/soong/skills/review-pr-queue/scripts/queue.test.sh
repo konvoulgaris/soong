@@ -88,5 +88,78 @@ noci='{"url":"u","additions":3,"deletions":0,"changedFiles":1,
   "files":[{"path":"src/copy.ts"}],"statusCheckRollup":[]}'
 check "absent CI requires thinking" "Requires thinking" "$(score_one "$noci" | cut -d' ' -f2-)"
 
+# --- fetching -------------------------------------------------------------
+# A gh stub: `search prs` lists two PRs, `pr view` returns per-PR metadata,
+# and one PR is unreadable so the row-level failure path is covered.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs")
+    cat <<'J'
+[{"url":"https://github.com/o/r/pull/1"},{"url":"https://github.com/o/r/pull/2"},
+ {"url":"https://github.com/o/r/pull/3"}]
+J
+    ;;
+  "pr view")
+    case "$3" in
+      *"/pull/1")
+        echo '{"url":"https://github.com/o/r/pull/1","title":"fix: copy","body":"",
+          "additions":2,"deletions":1,"changedFiles":1,"files":[{"path":"src/c.ts"}],
+          "statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false,
+          "reviewDecision":"","updatedAt":"2026-09-01T00:00:00Z",
+          "author":{"login":"a"}}' ;;
+      *"/pull/2")
+        echo '{"url":"https://github.com/o/r/pull/2","title":"feat: auth","body":"",
+          "additions":10,"deletions":2,"changedFiles":2,
+          "files":[{"path":"src/auth/token.ts"}],
+          "statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false,
+          "reviewDecision":"","updatedAt":"2026-09-02T00:00:00Z",
+          "author":{"login":"b"}}' ;;
+      *"/pull/3") exit 1 ;;
+    esac ;;
+esac
+SH
+
+out="$(bash "$script")"
+check "emits a row per PR" 3 "$(printf '%s' "$out" | jq '.prs | length')"
+check "sensitive PR sorts first" "https://github.com/o/r/pull/2" \
+  "$(printf '%s' "$out" | jq -r '.prs[0].url')"
+check "unreadable PR is kept" 1 \
+  "$(printf '%s' "$out" | jq '[.prs[] | select(.unreadable == true)] | length')"
+check "unreadable PR keeps its url" "https://github.com/o/r/pull/3" \
+  "$(printf '%s' "$out" | jq -r '.prs[] | select(.unreadable == true) | .url')"
+check "readable rows carry a classification" 2 \
+  "$(printf '%s' "$out" | jq '[.prs[] | select(.classification != null)] | length')"
+
+# Empty queue.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs") echo '[]' ;;
+esac
+SH
+check "empty queue exits 0" 0 "$(bash "$script" >/dev/null 2>&1; echo $?)"
+check "empty queue emits no rows" 0 "$(bash "$script" | jq '.prs | length')"
+
+# Drafts are excluded unless asked for.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs") echo '[{"url":"https://github.com/o/r/pull/9"}]' ;;
+  "pr view")
+    echo '{"url":"https://github.com/o/r/pull/9","title":"wip","body":"",
+      "additions":1,"deletions":0,"changedFiles":1,"files":[{"path":"a.ts"}],
+      "statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":true,
+      "reviewDecision":"","updatedAt":"2026-09-03T00:00:00Z",
+      "author":{"login":"c"}}' ;;
+esac
+SH
+check "drafts excluded by default" 0 "$(bash "$script" | jq '.prs | length')"
+check "drafts included on request" 1 \
+  "$(bash "$script" --include-drafts | jq '.prs | length')"
+
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1

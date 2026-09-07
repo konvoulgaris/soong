@@ -41,4 +41,38 @@ score_one() {
 
 if [ "${1:-}" = "--score-one" ]; then score_one; exit 0; fi
 
-printf '{"prs":[]}\n'
+include_drafts=0
+[ "${1:-}" = "--include-drafts" ] && include_drafts=1
+
+FIELDS='url,title,body,additions,deletions,changedFiles,files,statusCheckRollup,reviewDecision,isDraft,updatedAt,author'
+
+urls="$(gh search prs --review-requested=@me --state=open --json url \
+        --limit 100 2>/dev/null | jq -r '.[].url')" \
+  || die "could not search for review requests." 1
+
+rows=""
+while IFS= read -r url; do
+  [ -n "$url" ] || continue
+  if ! meta="$(gh pr view "$url" --json "$FIELDS" 2>/dev/null)"; then
+    # One unreadable pull request must not kill the queue.
+    rows="$rows$(jq -cn --arg u "$url" '{url:$u, unreadable:true}')
+"
+    continue
+  fi
+  if [ "$include_drafts" -eq 0 ] \
+     && [ "$(printf '%s' "$meta" | jq -r '.isDraft')" = "true" ]; then
+    continue
+  fi
+  sc="$(printf '%s' "$meta" | score_one)"
+  rows="$rows$(printf '%s' "$meta" | jq -c \
+      --argjson score "${sc%% *}" --arg class "${sc#* }" \
+      '{url, title, body, files: [.files[]?.path], churn: ((.additions//0)+(.deletions//0)),
+        isDraft, reviewDecision, updatedAt, author: .author.login,
+        score: $score, classification: $class, unreadable: false}')
+"
+done <<EOF
+$urls
+EOF
+
+# Unreadable rows sort last: no score to rank them by.
+printf '%s' "$rows" | jq -s '{prs: (sort_by(.unreadable, -(.score // 0)))}'
