@@ -512,10 +512,11 @@ expensive, so chaining them would hit its adjacency stop most of the time.
 Run:
 
 ```bash
-head -4 plugins/soong/skills/review-pr-queue/SKILL.md && ls plugins/soong/skills/review-pr-queue/scripts/queue.sh
+awk '/^---$/{n++; next} n==1' plugins/soong/skills/review-pr-queue/SKILL.md | cut -c1-50
+ls plugins/soong/skills/review-pr-queue/scripts/queue.sh
 ```
 
-Expected: the `---` fenced frontmatter with `name: review-pr-queue`, and the script path listed.
+Expected: the frontmatter fields, starting `name: review-pr-queue`, and the script path listed. The `awk` prints only what is between the `---` markers, so an unterminated block prints nothing.
 
 - [ ] **Step 3: Commit**
 
@@ -943,10 +944,10 @@ to appear thorough.
 Run:
 
 ```bash
-head -6 plugins/soong/agents/pr-reviewer-correctness.md
+awk '/^---$/{n++; next} n==1' plugins/soong/agents/pr-reviewer-correctness.md
 ```
 
-Expected: `name`, `description`, `model: sonnet`, and a read-only `tools` line.
+Expected: the frontmatter block's contents - `name`, `description`, `model: sonnet`, and `tools: Read, Grep, Glob, Bash`. The `awk` prints only what lies between the two `---` markers, so a missing or unterminated block prints nothing rather than looking correct.
 
 - [ ] **Step 3: Commit**
 
@@ -1046,10 +1047,10 @@ Ordered most severe first. If you found nothing, say so in one line.
 Run:
 
 ```bash
-head -6 plugins/soong/agents/pr-reviewer-design.md
+awk '/^---$/{n++; next} n==1' plugins/soong/agents/pr-reviewer-design.md
 ```
 
-Expected: `name`, `description`, `model: sonnet`, read-only `tools`.
+Expected: the same four fields as Task 7, with this agent's own name and description.
 
 - [ ] **Step 3: Commit**
 
@@ -1122,15 +1123,33 @@ The dispatch says which, and which lens you hold.
 
 - [ ] **Step 4: Verify all three edits landed and the architect lens is untouched**
 
-Run:
+Run each line and check it against the expectation beside it:
 
 ```bash
-grep -c "The verifier lens\|The architect lens\|The integration lens" plugins/soong/agents/adversarial-judge.md
-grep -n "Do not read the implementation" plugins/soong/agents/adversarial-judge.md
+grep -c '^\*\*The .* lens' plugins/soong/agents/adversarial-judge.md
+grep -c 'Your evidence is the spec, the findings, and the files' plugins/soong/agents/adversarial-judge.md
+grep -n 'read the implementation' plugins/soong/agents/adversarial-judge.md
 grep -n "pull request stack's ordering in spec mode" plugins/soong/agents/adversarial-judge.md
+grep -n 'about an architecture spec, or about a pull request' plugins/soong/agents/adversarial-judge.md
 ```
 
-Expected: `3` lens headings; the architect lens's original prohibition still present; the mode-aware deferral present.
+| Command | Expected |
+| --- | --- |
+| 1. lens headings | `3` — verifier, architect, integration |
+| 2. the old verifier evidence clause | `0` — Step 1 replaced it. A `1` means Step 1 was skipped. |
+| 3. the architect prohibition | one hit — the architect lens is untouched |
+| 4. the mode-aware deferral | one hit — Step 1 landed |
+| 5. the new opening line | one hit — Step 3 landed |
+
+Three details, because the obvious greps here all lie:
+
+- Anchor the lens count to `^**The`. The bare phrases "The verifier lens" and
+  "The architect lens" also appear inside the `drop` verdict bullet, so an
+  unanchored count reads 4 before any edit and would fail on a correct one.
+- Grep `read the implementation` without the leading "Do not": the sentence
+  wraps as `Do not\nread the implementation`, so the full phrase never matches.
+- Command 2 is the negative assertion. Commands 4 and 5 prove the new text
+  arrived; only command 2 proves the old text left.
 
 - [ ] **Step 5: Commit**
 
@@ -1196,7 +1215,15 @@ the codebase from zero and reports what it happened to find.
 
 - [ ] **Step 3: Make the cap gate mode-aware**
 
-Find the `**More than eight findings.**` paragraph in the "Before dispatching" section. Replace it with:
+In the "Before dispatching: two gates" section, replace the
+`**More than eight findings.**` paragraph **and** the "The cap is a signal and
+not a resource limit" paragraph that follows it — the replacement below absorbs
+that paragraph's reasoning into the spec-mode bullet, so leaving it in place
+states the same thing twice.
+
+Leave the `**No findings.**` gate above it alone.
+
+Replace with:
 
 ```markdown
 **Over the cap.** The cap is 8 in spec mode and 15 in PR mode, unless
@@ -1284,7 +1311,38 @@ blocker was swallowed is a contradiction, and the reader believes the status.
 The notice is still not a question and does not wait for an answer.
 ```
 
-- [ ] **Step 5: Make the Interactions lists mode-aware**
+- [ ] **Step 5: Make `Acting on agreement` mode-conditional**
+
+The section this step edits currently states `auto-resolve` and `needs-user`
+absolutely. Step 4 added the correct PR-mode meanings just above it, so without
+this step a council reading its own file top-to-bottom in PR mode hits the new
+section and then hits `apply the fix to the spec yourself` as an unconditional
+instruction. The spec calls this out as a change to this section, not merely a
+new mode setting.
+
+Replace the three verdict bullets and the carve-out paragraph with:
+
+```markdown
+* `drop` - dropped, and the user is not told, in both modes. One exception
+  below.
+* `auto-resolve` - **spec mode:** apply the fix to the spec yourself, before you
+  walk the queue, and list every fix you applied when you report. Applying them
+  first keeps you from asking the user about a spec you are about to change
+  under them. **PR mode:** report the fix alongside the finding; you edit
+  nothing.
+* `needs-user` - **spec mode:** queued for the user. **PR mode:** reported as a
+  concern, without the question text.
+
+One `auto-resolve` you do not apply, **in spec mode**: a fix that would add,
+remove, re-order, or re-split a pull request. That change makes cobrain's
+findings stale, so it needs a fresh review rather than a quiet edit. Queue it
+for the user instead, and say that it changes the stack.
+
+This carve-out has no PR-mode analogue and does not apply there. PR mode has no
+stack to re-split, and applies no fixes at all.
+```
+
+- [ ] **Step 6: Make the Interactions lists mode-aware**
 
 Append to the `## Using the Interactions lists` section:
 
@@ -1299,19 +1357,31 @@ B's row says it follows from A. Both are reported. A dependent finding is never
 dropped for being dependent.
 ```
 
-- [ ] **Step 6: Verify the edits and that spec-mode text survived**
-
-Run:
+- [ ] **Step 7: Verify the edits and that spec-mode text survived**
 
 ```bash
-grep -n "^## Arguments\|^## PR mode reports\|Over the cap\|the change surface" plugins/soong/skills/adversarial-council/SKILL.md
-grep -c "spec is unsound" plugins/soong/skills/adversarial-council/SKILL.md
-grep -n "One finding per message" plugins/soong/skills/adversarial-council/SKILL.md
+grep -c '^## Arguments\|^## PR mode reports' plugins/soong/skills/adversarial-council/SKILL.md
+grep -n 'Over the cap\|the change surface' plugins/soong/skills/adversarial-council/SKILL.md
+grep -c 'spec is unsound\|One finding per message' plugins/soong/skills/adversarial-council/SKILL.md
+grep -c 'apply the fix to the spec yourself' plugins/soong/skills/adversarial-council/SKILL.md
+grep -n 'no PR-mode analogue' plugins/soong/skills/adversarial-council/SKILL.md
+grep -c '^\* .auto-resolve. - .\*spec mode:' plugins/soong/skills/adversarial-council/SKILL.md
 ```
 
-Expected: the new headings present; `spec is unsound` still present (spec-mode reasoning preserved); the `Asking the user` rule still present.
+| Command | Expected |
+| --- | --- |
+| 1. new headings | `2` |
+| 2. mode-aware cap and inputs | hits for both |
+| 3. spec-mode reasoning and the walk rule | `2` — neither destroyed |
+| 4. the spec-mode auto-resolve instruction | `1` — kept, now scoped to spec mode |
+| 5. the carve-out's PR-mode exemption | one hit — Step 5 landed |
+| 6. the mode-conditional bullet | `1` — Step 5 rewrote the bullet, not just added prose |
 
-- [ ] **Step 7: Commit**
+Commands 3 and 4 are the regression assertions: they prove the spec-mode text
+survived the rewrite rather than being replaced by PR-mode text. Command 6
+distinguishes a real edit from prose appended somewhere harmless.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add plugins/soong/skills/adversarial-council/SKILL.md
@@ -1531,7 +1601,7 @@ request, that is `manage-pr`.
 Run:
 
 ```bash
-head -4 plugins/soong/skills/review-pr/SKILL.md
+awk '/^---$/{n++; next} n==1' plugins/soong/skills/review-pr/SKILL.md | cut -c1-50
 ls plugins/soong/skills/review-pr/scripts/guard.sh plugins/soong/skills/review-pr/scripts/surface.sh
 ```
 
@@ -1571,7 +1641,7 @@ Run:
 
 ```bash
 jq -r .version plugins/soong/.claude-plugin/plugin.json
-grep -n "gh. CLI" README.md
+grep -n 'gh. CLI' README.md   # . matches the backtick
 ```
 
 Expected: `0.16.0`; the new Requirements line.
