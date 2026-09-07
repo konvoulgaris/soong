@@ -237,7 +237,16 @@ Insert before the final `printf` in `queue.sh`:
 ```bash
 command -v jq >/dev/null 2>&1 || die "jq is not installed." 2
 
-SENSITIVE='(^|/)(auth|crypto|migrations?|migrate|payments?|billing|secrets?)(/|$)|(^|/)[^/]*auth[^/]*$|^\.github/workflows/|(^|/)Dockerfile|\.lock$|(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|requirements[^/]*\.txt)$'
+# Sensitive paths, in three idioms. Add to the fragment that matches your
+# intent - mixing them up is how a path silently stops matching.
+#   DIRS  - a whole path segment:      src/auth/x.ts, but never src/oauthly.ts
+#   NAMES - a substring of a filename: src/oauth.ts, secrets.tf, payment-intent.ts
+#   LOCKS - a suffix or exact filename
+SENS_DIRS='(^|/)(auth|crypto|migrations?|migrate|payments?|billing|secrets?)(/|$)'
+SENS_NAMES='(^|/)[^/]*(auth|secret|payment|billing)[^/]*$'
+SENS_LOCKS='\.lock$|(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|requirements[^/]*\.txt)$'
+SENSITIVE="$SENS_DIRS|$SENS_NAMES|^\.github/workflows/|(^|/)Dockerfile|$SENS_LOCKS"
+
 LOWSIGNAL='(^|/)(tests?|docs|fixtures|__snapshots__)/|[._-]test\.|[._-]spec\.|\.md$|\.snap$'
 
 # Reads one PR JSON object on stdin, prints "<score> <classification>".
@@ -372,12 +381,76 @@ SH
 check "drafts excluded by default" 0 "$(bash "$script" | jq '.prs | length')"
 check "drafts included on request" 1 \
   "$(bash "$script" --include-drafts | jq '.prs | length')"
+
+# --- regressions the checks above do not pin -------------------------------
+# A sensitive FILENAME, not just a sensitive directory. The plan's glob list
+# includes **/secrets* and **/payment*/**, and a whole-segment-only regex
+# silently misses secrets.tf and payment-intent.ts.
+for f in secrets.tf src/payment-intent.ts src/oauth.ts; do
+  check "sensitive filename $f is not Review now" "Requires thinking" \
+    "$(score_one "$(printf '{"additions":4,"deletions":0,
+       \"files\":[{\"path\":\"%s\"}],
+       \"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"}]}' "$f")" | cut -d' ' -f2-)"
+done
+
+# SKIPPED is green. Treating it as a failure would mark most PRs as needing
+# thought, which is the classification this tool exists to keep meaningful.
+skip='{"additions":3,"deletions":0,"changedFiles":1,
+  "files":[{"path":"src/c.ts"}],
+  "statusCheckRollup":[{"conclusion":"SKIPPED"},{"conclusion":"SUCCESS"}]}'
+check "SKIPPED counts as green" "Review now" "$(score_one "$skip" | cut -d' ' -f2-)"
+
+# Blast radius contributes: same churn, more top-level directories, higher score.
+one='{"additions":40,"deletions":0,"files":[{"path":"a/x.ts"},{"path":"a/y.ts"}],
+  "statusCheckRollup":[{"conclusion":"SUCCESS"}]}'
+two='{"additions":40,"deletions":0,"files":[{"path":"a/x.ts"},{"path":"b/y.ts"}],
+  "statusCheckRollup":[{"conclusion":"SUCCESS"}]}'
+check "blast radius raises the score" yes \
+  "$([ "$(score_one "$two" | cut -d' ' -f1)" -gt "$(score_one "$one" | cut -d' ' -f1)" ] \
+     && echo yes || echo no)"
+
+# A gh that exits 0 with garbage must not make a pull request disappear.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs") echo '[{"url":"https://github.com/o/r/pull/1"}]' ;;
+  "pr view") echo 'gh: this is not json'; exit 0 ;;
+esac
+SH
+out="$(bash "$script")"
+check "non-JSON gh output keeps the row" 1 "$(printf '%s' "$out" | jq '.prs | length')"
+check "non-JSON gh output marks it unreadable" true \
+  "$(printf '%s' "$out" | jq -r '.prs[0].unreadable')"
+
+# Unreadable rows sort last, which Task 4's SKILL.md relies on.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "search prs") echo '[{"url":"https://github.com/o/r/pull/1"},{"url":"https://github.com/o/r/pull/2"}]' ;;
+  "pr view")
+    case "$3" in
+      *"/pull/1") exit 1 ;;
+      *"/pull/2")
+        echo '{"url":"https://github.com/o/r/pull/2","title":"t","body":"",
+          "additions":2,"deletions":0,"changedFiles":1,"files":[{"path":"src/c.ts"}],
+          "statusCheckRollup":[{"conclusion":"SUCCESS"}],"isDraft":false,
+          "reviewDecision":"","updatedAt":"2026-09-01T00:00:00Z",
+          "author":{"login":"a"}}' ;;
+    esac ;;
+esac
+SH
+check "unreadable rows sort last" true \
+  "$(bash "$script" | jq -r '.prs[-1].unreadable')"
 ```
 
 - [ ] **Step 2: Run them to make sure they fail**
 
 Run: `bash plugins/soong/skills/review-pr-queue/scripts/queue.test.sh`
-Expected: the new checks FAIL — the script still prints `{"prs":[]}`.
+Expected: **6 of the 9** new checks FAIL — the script still prints `{"prs":[]}`. The 11 existing checks still pass.
+
+Three of the nine pass vacuously against the stub, because they assert an absence the stub also satisfies: `empty queue exits 0`, `empty queue emits no rows`, and `drafts excluded by default`. That last one can only fail if drafts leak, so on its own it does not prove the filter fires — its partner `drafts included on request` is the half that does, and it is among the six. Keep all nine: together they pin the behaviour, and a check that cannot fail today still guards a regression tomorrow.
 
 - [ ] **Step 3: Implement the minimal code to make the tests pass**
 
@@ -396,7 +469,10 @@ urls="$(gh search prs --review-requested=@me --state=open --json url \
 rows=""
 while IFS= read -r url; do
   [ -n "$url" ] || continue
-  if ! meta="$(gh pr view "$url" --json "$FIELDS" 2>/dev/null)"; then
+  # Exit 0 with non-JSON output must land here too, not silently drop the row:
+  # --argjson score "" is a hard jq failure, and without -e nothing notices.
+  if ! meta="$(gh pr view "$url" --json "$FIELDS" 2>/dev/null)" \
+     || ! printf '%s' "$meta" | jq -e . >/dev/null 2>&1; then
     # One unreadable pull request must not kill the queue.
     rows="$rows$(jq -cn --arg u "$url" '{url:$u, unreadable:true}')
 "
@@ -407,6 +483,15 @@ while IFS= read -r url; do
     continue
   fi
   sc="$(printf '%s' "$meta" | score_one)"
+  # Both expansions below return the whole string when it holds no space, which
+  # would put the score in the classification. Treat a degraded score as
+  # unreadable rather than emitting a numeric classification.
+  case "$sc" in
+    [0-9]*" "*) : ;;
+    *) rows="$rows$(jq -cn --arg u "$url" '{url:$u, unreadable:true}')
+"
+       continue ;;
+  esac
   rows="$rows$(printf '%s' "$meta" | jq -c \
       --argjson score "${sc%% *}" --arg class "${sc#* }" \
       '{url, title, body, files: [.files[]?.path], churn: ((.additions//0)+(.deletions//0)),
@@ -430,7 +515,7 @@ Expected: `all checks passed`
 
 ```bash
 git add plugins/soong/skills/review-pr-queue/scripts/
-git commit -m "feat: fetch the queue and emit ranked JSON"
+git commit -m "feat: fetch the review queue and emit ranked JSON"
 ```
 
 ---
