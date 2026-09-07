@@ -19,7 +19,7 @@ The spec deliberately left the scoring numbers open — it says the score is nev
 | Knob | Value | Reason |
 | --- | --- | --- |
 | Low churn | weighted churn `<= 50` | Above this a diff stops being skimmable. |
-| Sensitive-path weight | 500 per matched path | Must outrank any churn score, so a 4-line migration beats a 500-line safe diff. |
+| Sensitive-path weight | 500 per matched path | Outranks the churn score at any realistic size, so a 4-line migration beats a 500-line safe diff. |
 | Churn points | `log(weighted churn) * 40` | Logarithmic, so churn alone can never overtake a sensitive path. |
 | Blast-radius weight | 25 per distinct top-level dir | Meaningful, never enough to outrank a sensitive path. |
 | Low-signal discount | churn scaled by `1 - lowsignal_fraction` | An all-snapshot PR weighs 0; a half-test PR weighs half. |
@@ -118,8 +118,8 @@ out="$(bash "$script" 2>&1 >/dev/null)"
 case "$out" in *"gh auth login"*) r=yes ;; *) r=no ;; esac
 check "unauthenticated names the fix" yes "$r"
 
-[ "$fails" -eq 0 ] && echo "all passed" || echo "$fails failed"
-exit $((fails > 0))
+[ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
+echo "$fails check(s) failed"; exit 1
 ```
 
 - [ ] **Step 2: Run it to make sure it fails**
@@ -148,7 +148,7 @@ printf '{"prs":[]}\n'
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `bash plugins/soong/skills/review-pr-queue/scripts/queue.test.sh`
-Expected: `all passed`
+Expected: `all checks passed`
 
 - [ ] **Step 5: Commit**
 
@@ -173,6 +173,14 @@ Append to `queue.test.sh`, before the tally:
 
 ```bash
 # --- scoring and classification -------------------------------------------
+# Task 1 left an UNAUTHENTICATED stub installed. queue.sh runs its gh preflight
+# before the --score-one early exit, so without a healthy stub here every
+# scoring call below dies at exit 2 and returns an empty string. Install one.
+fake_gh <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+
 # score_one <json> -> "<score> <classification>"
 score_one() { printf '%s' "$1" | bash "$script" --score-one; }
 
@@ -195,7 +203,9 @@ check "red CI requires thinking" "Requires thinking" "$(score_one "$red" | cut -
 # A sensitive path must outrank a much larger safe diff.
 s_mig="$(score_one "$mig" | cut -d' ' -f1)"
 s_big="$(score_one "$big" | cut -d' ' -f1)"
-check "sensitive outranks large-and-safe" yes "$([ "$s_mig" -gt "$s_big" ] && echo yes || echo no)"
+# Default to 0 so an empty score is a visible failure, not a misleading "no".
+check "sensitive outranks large-and-safe" yes \
+  "$([ "${s_mig:-0}" -gt "${s_big:-0}" ] && echo yes || echo no)"
 
 # Test-only churn is discounted, so it stays Review now.
 snap='{"url":"u","additions":300,"deletions":0,"changedFiles":2,
@@ -218,7 +228,7 @@ check "absent CI requires thinking" "Requires thinking" "$(score_one "$noci" | c
 - [ ] **Step 2: Run them to make sure they fail**
 
 Run: `bash plugins/soong/skills/review-pr-queue/scripts/queue.test.sh`
-Expected: the seven new checks FAIL — `--score-one` is not implemented, so each returns empty.
+Expected: all eight new checks FAIL — `--score-one` is not implemented, so each returns empty.
 
 - [ ] **Step 3: Implement the minimal code to make the tests pass**
 
@@ -268,7 +278,7 @@ Two details that matter:
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `bash plugins/soong/skills/review-pr-queue/scripts/queue.test.sh`
-Expected: `all passed`
+Expected: `all checks passed`
 
 - [ ] **Step 5: Commit**
 
@@ -414,7 +424,7 @@ printf '%s' "$rows" | jq -s '{prs: (sort_by(.unreadable, -(.score // 0)))}'
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `bash plugins/soong/skills/review-pr-queue/scripts/queue.test.sh`
-Expected: `all passed`
+Expected: `all checks passed`
 
 - [ ] **Step 5: Commit**
 
@@ -602,8 +612,8 @@ check "case difference still matches" 0 "$(bash "$script" "$url" >/dev/null 2>&1
 
 check "missing argument exits 2" 2 "$(bash "$script" >/dev/null 2>&1; echo $?)"
 
-[ "$fails" -eq 0 ] && echo "all passed" || echo "$fails failed"
-exit $((fails > 0))
+[ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
+echo "$fails check(s) failed"; exit 1
 ```
 
 - [ ] **Step 2: Run them to make sure they fail**
@@ -654,7 +664,7 @@ jq -cn --arg r "$pr_repo" --argjson n "$number" '{ok:true, repo:$r, number:$n}'
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `bash plugins/soong/skills/review-pr/scripts/guard.test.sh`
-Expected: `all passed`
+Expected: `all checks passed`
 
 - [ ] **Step 5: Commit**
 
@@ -766,8 +776,8 @@ diff --git a/b.ts b/b.ts
 check "all changed paths listed" 2 \
   "$(printf '%s' "$diff5" | bash "$script" | jq '.paths | length')"
 
-[ "$fails" -eq 0 ] && echo "all passed" || echo "$fails failed"
-exit $((fails > 0))
+[ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
+echo "$fails check(s) failed"; exit 1
 ```
 
 - [ ] **Step 2: Run them to make sure they fail**
@@ -840,7 +850,7 @@ jq -cn --argjson p "$paths" --argjson e "$entries" '{paths:$p, entries:$e}'
 - [ ] **Step 4: Run the tests and make sure they pass**
 
 Run: `bash plugins/soong/skills/review-pr/scripts/surface.test.sh`
-Expected: `all passed`
+Expected: `all checks passed`
 
 If a regex misses a case, fix the regex — do not weaken the test. A missed boundary declaration means the integration judge never sees a contract change, which is the failure this script exists to prevent.
 
@@ -1672,7 +1682,7 @@ for t in plugins/soong/skills/review-pr-queue/scripts/queue.test.sh \
 done
 ```
 
-Expected: `all passed` from each. The last three are pre-existing and must be unaffected — if one now fails, this branch broke it.
+Expected: `all checks passed` from each. The last three are pre-existing and must be unaffected — if one now fails, this branch broke it.
 
 - [ ] **Step 2: Confirm no debris**
 
