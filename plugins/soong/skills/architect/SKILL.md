@@ -163,8 +163,14 @@ rediscovering the codebase from zero.
 
 ## Step 3.5: Filter the findings with the council
 
-Invoke the `adversarial-council` skill with cobrain's findings, the spec path,
-the pull request stack, and the files each finding touches.
+Invoke the `adversarial-council` skill with `--mode spec`, passing cobrain's
+findings, the spec path, the pull request stack, and the files each finding
+touches.
+
+`--mode spec` is the council's default and its cap of 8 is unchanged, so this
+is a no-op today. It is explicit so that anyone adding a third mode later can
+see which callers assumed the default. Do not pass `--max-findings`: the cap
+follows from the mode.
 
 For that last one, use the finding's own **Where** field. Cobrain may give only
 a spec section or a PR number there, so when a finding names no files, pass the
