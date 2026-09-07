@@ -14,14 +14,43 @@ You run this on the main thread. The judges are subagents; the council is not.
 The council's output includes questions for the user, and a subagent cannot ask
 the user anything.
 
+## Arguments
+
+| Argument | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `--mode` | `spec` or `pr` | `spec` | Sets the lens pair, the cap (8 in spec, 15 in PR), the over-cap message, and what happens on agreement. |
+| `--max-findings` | integer | none | Overrides the mode's cap. |
+| `--no-max-findings` | flag | off | Disables the gate. |
+
+`--max-findings` has no default of its own: the cap comes from `--mode`, so
+`--mode pr` alone means a cap of 15. Callers do not pass a value their mode
+already implies.
+
+`--no-max-findings` wins over `--max-findings`. Passing both is not an error;
+say which one you honoured.
+
+An invocation with no arguments is spec mode with a cap of eight - exactly the
+behaviour this skill had before the arguments existed.
+
 ## Inputs
 
-You need all four:
+You need all four. Two of them differ by mode:
 
-* The findings, each with its severity.
-* The spec path.
-* The pull request stack, as an ordered list.
-* The files or globs each finding touches.
+| # | Spec mode | PR mode |
+| --- | --- | --- |
+| 1 | The findings, each with its severity | unchanged |
+| 2 | The spec path | the pull request URL, its title, and its body |
+| 3 | The pull request stack, as an ordered list | the change surface |
+| 4 | The files or globs each finding touches | unchanged |
+
+Each PR-mode input feeds the lens its spec-mode counterpart fed. The spec gave
+both judges the statement of intent, and the pull request body now does. The
+stack was the architect lens's whole evidence; the change surface is the
+integration lens's.
+
+Input 4 is what makes the verifier lens work, in either mode. A judge told to
+check a finding against the code, without being told which files, rediscovers
+the codebase from zero and reports what it happened to find.
 
 The last one is what makes the verifier lens work. A judge told to check a
 finding against the code, without being told which files, rediscovers the
@@ -35,20 +64,32 @@ fill the gap. This skill judges findings; it does not generate them.
 
 **No findings.** Nothing to filter. Say so and stop.
 
-**More than eight findings.** Do not run the council. Tell the user that the
-review returned more findings than the council filters, and that the spec needs
-rework rather than filtering. Hand every finding back unfiltered, and say they
-are unfiltered. Whoever invoked you walks them one at a time: the `architect`
-skill does that in its Step 4, and when you were invoked directly you walk them
-yourself, under the rules in "Asking the user" below.
+**Over the cap.** The cap is 8 in spec mode and 15 in PR mode, unless
+`--max-findings` overrides it or `--no-max-findings` disables the gate.
 
-The cap is a signal and not a resource limit. Nine or more findings means the
-spec is unsound. Filtering an unsound spec down to "only what needs your input"
-tells the user that everything else was fine, which is the wrong message and
-the expensive kind of wrong.
+Do not run the council. Hand every finding back unfiltered, and say they are
+unfiltered. What you tell the user differs by mode:
 
-Do not raise the cap to get a large set through, and do not drop findings to
-get under it.
+* **Spec mode.** The spec needs rework rather than filtering. Nine or more
+  findings means the spec is unsound, and filtering an unsound spec down to
+  "only what needs your input" tells the user everything else was fine, which
+  is the expensive kind of wrong.
+* **PR mode.** The pull request is too large to review as one unit and should
+  be split. "Rework the spec" would be nonsense here; "this is too big to
+  review" is real reviewer feedback.
+
+Whoever invoked you presents them: the `architect` skill walks them one at a
+time in its Step 4, `review-pr` reports them as rows in its Step 4, and when
+you were invoked directly you walk them yourself under "Asking the user" below.
+
+Do not raise the cap to get a large set through, and do not drop findings to get
+under it.
+
+When `--no-max-findings` was passed, state the finding count up front. Then:
+confirm before walking a queue larger than the mode's cap **if you own the
+walk**; if a caller owns it - `architect` Step 4, or `review-pr` Step 4 - report
+the count, say the gate was disabled, and let the caller decide. Never prompt
+about a walk you are not performing.
 
 ## Dispatch
 
@@ -117,6 +158,15 @@ which findings relate, not whether a finding is real, so there is nothing to
 reconcile and one judge noticing a link is enough. An entry naming a finding
 that does not exist is discarded, as with verdicts.
 
+**In PR mode**, deduplication carries unchanged: duplicate findings are one
+row, naming every finding it covers.
+
+Dependency entries become **row grouping and ordering only**. PR mode collects
+no answer and edits nothing, so no finding becomes moot and none is skipped.
+Where an entry says B depends on A, the two are adjacent rows with A first, and
+B's row says it follows from A. Both are reported. A dependent finding is never
+dropped for being dependent.
+
 The rebuttal round does not carry these lists. The rebuttal settles verdicts,
 and an entry cannot change a verdict.
 
@@ -148,19 +198,68 @@ user, because there is no further round to send it to:
   each judge's stated reason. A shared `abstain` is never acted on, before the
   round or after it.
 
+## PR mode reports; it does not walk
+
+Spec mode ends in an interactive walk, and the `Asking the user` rules below
+bind whoever owns it. PR mode ends in a table. The user is reviewing someone
+else's pull request and has no decision to make inside the skill.
+
+So in PR mode the `Asking the user` rules **do not apply**, and `review-pr`
+Step 4 renders a report. A council that applied them would have `review-pr`
+interrogate the user finding-by-finding about a stranger's pull request.
+
+### Every finding you did not drop is a row
+
+That is `auto-resolve`, `needs-user`, findings the judges stayed split on after
+the rebuttal, findings either judge abstained on, findings left unjudged by a
+failed judge, and every finding in an unfiltered handback. Each carries what its
+case needs:
+
+| Case | The row carries |
+| --- | --- |
+| `auto-resolve` | the finding and the recommended fix |
+| `needs-user` | the finding and the judge's reasoning |
+| Still split after the rebuttal | **both** judges' positions, not a merged summary |
+| Abstained, either side or both | each judge's stated reason and what it said it would need |
+| Unjudged, a judge failed | that it was not judged, and why |
+| Unfiltered handback | the finding, marked unfiltered |
+
+`drop` is the only verdict that removes a finding. A dropped `blocking` finding
+still leaves its notice.
+
+This is spelled out because the omission points the wrong way: read "no shared
+verdict" as "did not survive" and the report prints a clean status on a pull
+request whose one finding was the one the judges could not settle.
+
+### The blocking-drop notice in PR mode
+
+Print it **below the concerns table**, and let it force the status to
+`Concerns` even when the table is empty. `Reviewable` beside a notice saying a
+blocker was swallowed is a contradiction, and the reader believes the status.
+
+The notice is still not a question and does not wait for an answer.
+
 ## Acting on agreement
 
-* `drop` - dropped, and the user is not told. One exception below.
-* `auto-resolve` - apply the fix to the spec yourself, before you walk the
-  queue, and list every fix you applied when you report. Applying them first
-  keeps you from asking the user about a spec you are about to change under
-  them.
-* `needs-user` - queued for the user.
+* `drop` - dropped, and the user is not told, in both modes. One exception
+  below.
+* `auto-resolve` - **spec mode:** apply the fix to the spec yourself, before you
+  walk the queue, and list every fix you applied when you report. Applying them
+  first keeps you from asking the user about a spec you are about to change
+  under them. **PR mode:** report the fix alongside the finding; you edit
+  nothing, because the code is not the user's and `review-pr` is read-only.
+* `needs-user` - **spec mode:** queued for the user. **PR mode:** reported as a
+  concern, without the question text. A question with options, printed where no
+  answer is collected, reads as a prompt waiting on the user; keep the judge's
+  reasoning instead.
 
-One `auto-resolve` you do not apply: a fix that would add, remove, re-order, or
-re-split a pull request. That change makes cobrain's findings stale, so it needs
-a fresh review rather than a quiet edit. Queue it for the user instead, and say
-that it changes the stack.
+One `auto-resolve` you do not apply, **in spec mode**: a fix that would add,
+remove, re-order, or re-split a pull request. That change makes cobrain's
+findings stale, so it needs a fresh review rather than a quiet edit. Queue it
+for the user instead, and say that it changes the stack.
+
+This carve-out has no PR-mode analogue and does not apply there. PR mode has no
+stack to re-split, and applies no fixes at all.
 
 ### The blocking exception
 
