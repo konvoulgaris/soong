@@ -923,6 +923,46 @@ diff --git a/b.ts b/b.ts
 check "all changed paths listed" 2 \
   "$(printf '%s' "$diff5" | bash "$script" | jq '.paths | length')"
 
+# --- kinds the spec requires that a declaration-keyword regex alone misses ---
+# "Function, method, and class signatures reachable from outside the file" and
+# "database column and index names" are both on the spec's inclusion list, and
+# none of the checks above reach them.
+kind_of() { printf '%s\n' "$1" | bash "$script" | jq -r '.entries[0] | "\(.name) \(.kind)"'; }
+
+# A Go method carries a receiver before its name.
+check "go method with a receiver" "Handle declaration" "$(kind_of 'diff --git a/a.go b/a.go
+--- a/a.go
++++ b/a.go
+@@ -1 +1 @@
++func (s *Server) Handle(w http.ResponseWriter) {}')"
+
+# An exported binding holding a function is reachable like a declaration.
+check "exported arrow function" "handler declaration" "$(kind_of 'diff --git a/a.ts b/a.ts
+--- a/a.ts
++++ b/a.ts
+@@ -1 +1 @@
++export const handler = (x: string) => x;')"
+
+# ... but a local one is not on the surface.
+check "local arrow function is excluded" 0 \
+  "$(printf '%s\n' 'diff --git a/a.ts b/a.ts
+--- a/a.ts
++++ b/a.ts
+@@ -1 +1 @@
++const localThing = (x) => x;' | bash "$script" | jq '.entries | length')"
+
+check "sql added column" "email_verified schema" "$(kind_of 'diff --git a/m.sql b/m.sql
+--- a/m.sql
++++ b/m.sql
+@@ -1 +1 @@
++ALTER TABLE users ADD COLUMN email_verified boolean;')"
+
+check "sql created index" "idx_users_email schema" "$(kind_of 'diff --git a/m.sql b/m.sql
+--- a/m.sql
++++ b/m.sql
+@@ -1 +1 @@
++CREATE UNIQUE INDEX idx_users_email ON users(email);')"
+
 [ "$fails" -eq 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fails check(s) failed"; exit 1
 ```
@@ -947,6 +987,13 @@ diff="$(cat)"
 paths="$(printf '%s\n' "$diff" | sed -n 's|^diff --git a/.* b/\(.*\)$|\1|p' \
   | jq -R -s -c 'split("\n") | map(select(length > 0)) | unique')"
 decl_re='^[+-][[:space:]]*(export[[:space:]]+)?(async[[:space:]]+)?(func|function|def|class|interface|type|struct|enum)[[:space:]]+[A-Za-z_]'
+# A Go method carries a receiver before its name: func (s *Server) Handle(...)
+recv_re='^[+-][[:space:]]*func[[:space:]]*\([^)]*\)[[:space:]]+[A-Za-z_]'
+# An exported binding holding a function is reachable like a declaration:
+# export const handler = (x) => ..., export let f = function ...
+assign_fn_re='^[+-][[:space:]]*export[[:space:]]+(const|let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*(async[[:space:]]+)?(\(|function)'
+# Column and index names, which callers depend on by name.
+sql_re='(ADD|DROP|RENAME|ALTER)[[:space:]]+(COLUMN|INDEX)[[:space:]]+|CREATE[[:space:]]+(UNIQUE[[:space:]]+)?INDEX[[:space:]]+'
 route_re='\.(route|get|post|put|patch|delete)\('
 env_re='(os\.environ|process\.env|getenv)'
 const_re='^[+-][[:space:]]*(export[[:space:]]+)?(const|var|let)?[[:space:]]*[A-Z][A-Z0-9_]{2,}[[:space:]]*='
@@ -964,6 +1011,27 @@ while IFS= read -r line; do
     i="$(name_index "$name")"
     if [ "$i" -lt 0 ]; then names+=("$name"); kinds+=("declaration"); befores+=(""); afters+=(""); i=$((${#names[@]}-1)); fi
     if [ "$side" = before ]; then befores[$i]="$body"; else afters[$i]="$body"; fi
+    continue
+  fi
+  if printf '%s' "$line" | grep -Eq "$recv_re"; then
+    name="$(printf '%s' "$body" | sed -nE 's/.*func[[:space:]]*\([^)]*\)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*).*/\1/p')"
+    [ -n "$name" ] || continue
+    i="$(name_index "$name")"
+    if [ "$i" -lt 0 ]; then names+=("$name"); kinds+=("declaration"); befores+=(""); afters+=(""); i=$((${#names[@]}-1)); fi
+    if [ "$side" = before ]; then befores[$i]="$body"; else afters[$i]="$body"; fi
+    continue
+  fi
+  if printf '%s' "$line" | grep -Eq "$assign_fn_re"; then
+    name="$(printf '%s' "$body" | sed -nE 's/.*export[[:space:]]+(const|let|var)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*).*/\2/p')"
+    [ -n "$name" ] || continue
+    i="$(name_index "$name")"
+    if [ "$i" -lt 0 ]; then names+=("$name"); kinds+=("declaration"); befores+=(""); afters+=(""); i=$((${#names[@]}-1)); fi
+    if [ "$side" = before ]; then befores[$i]="$body"; else afters[$i]="$body"; fi
+    continue
+  fi
+  if printf '%s' "$body" | grep -Eiq "$sql_re"; then
+    k="$(printf '%s' "$body" | sed -nE 's/.*(ADD|DROP|RENAME|ALTER)[[:space:]]+(COLUMN|INDEX)[[:space:]]+"?([A-Za-z_][A-Za-z0-9_]*)"?.*/\3/pI; s/.*CREATE[[:space:]]+(UNIQUE[[:space:]]+)?INDEX[[:space:]]+"?([A-Za-z_][A-Za-z0-9_]*)"?.*/\2/pI' | head -1)"
+    [ -n "$k" ] && add_entry "$k" schema "$([ "$side" = after ] && echo added || echo removed)" "" "$body"
     continue
   fi
   if printf '%s' "$body" | grep -Eq "$route_re"; then
