@@ -184,10 +184,17 @@ body_lines() {
 # every `gh pr create` because it could not read a trailer is worse than one that
 # quietly stops checking. Returns 1 (present, or unknowable) by default and 0
 # only on a positive read of an absent trailer.
+#
+# Reads HEAD where the command will run, not where the hook does. A worktree
+# session is usually launched from the main checkout and reaches the worktree
+# with a leading `cd <dir> &&`, so the hook's own cwd is the wrong repo. Only
+# that leading cd is followed -- the same ponytail as the commit branch below.
 polish_missing() {
   command -v git >/dev/null 2>&1 || return 1
-  local trailer
-  trailer="$(git log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD 2>/dev/null)" || return 1
+  local trailer dir
+  dir="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+"?([^"[:space:];&|]+)"?.*/\1/p' | head -1)"
+  dir="${dir/#\~/$HOME}"
+  trailer="$(git -C "${dir:-.}" log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD 2>/dev/null)" || return 1
   [ -z "$(printf '%s' "$trailer" | tr -d '[:space:]')" ]
 }
 

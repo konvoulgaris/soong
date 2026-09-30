@@ -313,6 +313,17 @@ else
   printf 'FAIL  polish deny did not combine with the title reason\n'
 fi
 
+# The trailer is read where the command runs. The hook's cwd here has no trailer
+# on HEAD; the repo the command cd's into does, and the reverse holds too.
+other_repo="$XDG_DATA_HOME/other"
+git init -q "$other_repo" 2>/dev/null
+git -C "$other_repo" config user.email t@example.com
+git -C "$other_repo" config user.name t
+git -C "$other_repo" commit -q --allow-empty -m "refactor: polish" -m "Polish-passes: review,simplify"
+check advise 'polish: cd to a polished repo'  "cd $other_repo && gh pr create --title \"feat: thing\" --body \"x\""
+git -C "$other_repo" commit -q --allow-empty -m "feat: more work"
+check deny   'polish: cd to a stale repo'     "cd $other_repo && gh pr create --title \"feat: thing\" --body \"x\""
+
 # The precondition is a PR-branch rule only. A commit must not be judged on it,
 # or polish could never make the commit that clears it.
 # Never deny. This repo is configured, so the commit branch advises on its scope
