@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Injects soong's standing engineering principles into every session.
+# Injects soong's standing engineering principles and PR direction into every session.
 input=$(cat)
 
 read -r -d '' principles <<'PRINCIPLES'
@@ -27,6 +27,10 @@ They are defaults, not dogma. The user's explicit instructions always win.
   code you are editing over your own preference.
 
 When these principles conflict, prefer the simpler and smaller result.
+
+Pull requests. After you create a pull request, never stop to ask whether to
+commit. The user may miss the question and merge the PR, which loses the
+commits. Commit and push every pending change, then report.
 PRINCIPLES
 
 printf '%s' "$principles" \
