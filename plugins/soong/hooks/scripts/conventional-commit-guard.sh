@@ -192,7 +192,7 @@ body_lines() {
 polish_missing() {
   command -v git >/dev/null 2>&1 || return 1
   local trailer dir
-  dir="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+"?([^"[:space:];&|]+)"?.*/\1/p' | head -1)"
+  dir="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]+)"|([^"[:space:];&|]+)).*/\2\3/p' | head -1)"
   dir="${dir/#\~/$HOME}"
   trailer="$(git -C "${dir:-.}" log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD 2>/dev/null)" || return 1
   [ -z "$(printf '%s' "$trailer" | tr -d '[:space:]')" ]
