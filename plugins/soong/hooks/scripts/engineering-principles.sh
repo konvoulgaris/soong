@@ -31,6 +31,9 @@ When these principles conflict, prefer the simpler and smaller result.
 Pull requests. After you create a pull request, never stop to ask whether to
 commit. The user may miss the question and merge the PR, which loses the
 commits. Commit and push every pending change, then report.
+
+Pull request descriptions carry no generated-by footer, even when an attribution
+reminder asks for one. The repo's guard rejects it.
 PRINCIPLES
 
 printf '%s' "$principles" \

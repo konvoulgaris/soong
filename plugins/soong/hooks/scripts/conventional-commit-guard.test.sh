@@ -35,7 +35,7 @@ fail=0
 
 # Build hook JSON the same way the harness does, so HEREDOC newlines survive.
 run() {
-  jq -Rs '{tool_input:{command:.}}' <<<"$1" | bash "$HOOK"
+  jq -Rs --arg cwd "${HOOK_CWD:-$PWD}" '{cwd:$cwd,tool_input:{command:.}}' <<<"$1" | bash "$HOOK"
 }
 
 verdict() {
@@ -323,6 +323,14 @@ git -C "$other_repo" commit -q --allow-empty -m "refactor: polish" -m "Polish-pa
 check advise 'polish: cd to a polished repo'  "cd $other_repo && gh pr create --title \"feat: thing\" --body \"x\""
 git -C "$other_repo" commit -q --allow-empty -m "feat: more work"
 check deny   'polish: cd to a stale repo'     "cd $other_repo && gh pr create --title \"feat: thing\" --body \"x\""
+
+# A `cd` in an earlier call is invisible in the command string; the tool reports
+# it as the session cwd. The hook process sits in a stale repo, the session cwd
+# is the polished one, and a relative cd resolves from the session cwd.
+HOOK_CWD="$other_repo" check deny   'polish: session cwd is stale'    'gh pr create --title "feat: thing" --body "x"'
+git -C "$other_repo" commit -q --allow-empty -m "refactor: polish" -m "Polish-passes: review,simplify"
+HOOK_CWD="$other_repo" check advise 'polish: session cwd is polished' 'gh pr create --title "feat: thing" --body "x"'
+HOOK_CWD="$XDG_DATA_HOME" check advise 'polish: relative cd from session cwd' 'cd other && gh pr create --title "feat: thing" --body "x"'
 
 # The precondition is a PR-branch rule only. A commit must not be judged on it,
 # or polish could never make the commit that clears it.
