@@ -107,6 +107,21 @@ that invoked the whole chain to run without a user present.
    decide whether polish already ran. Keep it on every polish commit. The
    subject is prose and may be reworded; the trailer is the contract.
 
+   When the agent changed nothing, add `--allow-empty`: the commit only records
+   the pass.
+
+   Git reads trailers from the last paragraph only. When the project requires a
+   `Co-Authored-By` trailer on commits, put it in the same paragraph as
+   `Polish-passes`, never in a later `-m`. A separate paragraph makes git ignore
+   `Polish-passes`, and the PR-guard hook then denies as if polish never ran:
+
+   ```bash
+   git commit -m "refactor: ..." -m "$(printf 'Polish-passes: review,simplify\nCo-Authored-By: ...')"
+   ```
+
+   Check the result before reporting: the trailer command in `manage-pr`
+   compose step 0 must print `review,simplify` on the new `HEAD`.
+
    Never `git add -A`, and never `git commit -a`: the tree can hold unrelated
    edits, and a caller such as `merge` may have just restored a stash, so a
    blanket stage sweeps work the agent never reviewed into this commit. List

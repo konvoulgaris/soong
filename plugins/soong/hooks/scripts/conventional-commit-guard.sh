@@ -13,6 +13,9 @@
 # co-authorship trailer on commits.
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
+# Where the Bash tool will run the command. The tool's cwd persists across calls,
+# so an earlier `cd` puts it somewhere other than this hook's own cwd.
+session_cwd=$(printf '%s' "$input" | jq -r '.cwd // ""')
 
 # The repo's Conventional Commits scope rule: "true", "false", or empty for
 # "not configured". Read through soong-setup.sh so the project-key derivation
@@ -187,13 +190,19 @@ body_lines() {
 #
 # Reads HEAD where the command will run, not where the hook does. A worktree
 # session is usually launched from the main checkout and reaches the worktree
-# with a leading `cd <dir> &&`, so the hook's own cwd is the wrong repo. Only
-# that leading cd is followed -- the same ponytail as the commit branch below.
+# with a leading `cd <dir> &&` or a `cd` in an earlier call, so the hook's own
+# cwd is the wrong repo. The base is the session cwd from the hook input, and a
+# leading cd is followed from there. Only that leading cd is followed -- the same
+# ponytail as the commit branch below.
 polish_missing() {
   command -v git >/dev/null 2>&1 || return 1
   local trailer dir
   dir="$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]+)"|([^"[:space:];&|]+)).*/\2\3/p' | head -1)"
   dir="${dir/#\~/$HOME}"
+  case "$dir" in
+    /*) ;;
+    *) dir="${session_cwd:+$session_cwd/}$dir" ;;
+  esac
   trailer="$(git -C "${dir:-.}" log -1 --format='%(trailers:key=Polish-passes,valueonly)' HEAD 2>/dev/null)" || return 1
   [ -z "$(printf '%s' "$trailer" | tr -d '[:space:]')" ]
 }
