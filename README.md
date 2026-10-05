@@ -111,10 +111,10 @@ Run check mode in CI to detect uncommitted generated changes.
 
 Skills resolve scripts from their installed paths. The shared
 `plugins/soong/skills/soong-setup/reference/hosts.md` defines agent dispatch,
-branch prefixes, and worktree operations. Codex receives named agent procedures
-as subagent instructions. Claude agent model and tool metadata do not configure
-Codex agents. Read-only instructions require host tool restrictions for enforced
-access control.
+branch prefixes, and worktree operations. Soong ships no named agents. The main
+agent runs every workflow itself, including `polish`, on both hosts. Subagent
+dispatch is for exploration and parallel work only. Read-only instructions
+require host tool restrictions for enforced access control.
 
 Both hosts read the same engineering principles. Codex's generated hook file
 includes the Bash convention guard, the Notion content reminder, and SessionStart
@@ -124,7 +124,7 @@ in the official [hook documentation](https://learn.chatgpt.com/docs/hooks).
 Codex excludes Claude's Skill matcher and brainstorming prompt reminder.
 Soong workflows use the installed worktree skill for isolation instead.
 Some tool paths bypass hooks. A successful configuration check does not prove
-hook execution or identical agent behavior.
+hook execution or identical host behavior.
 
 Run the full shell test suite:
 

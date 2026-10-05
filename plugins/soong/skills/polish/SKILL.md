@@ -7,34 +7,21 @@ description: Run a code review with autofix, then a simplification pass, then co
 
 Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
 
-One agent over the current changes, its findings applied, one commit, one
-short report.
+Review the changed code, fix what is broken, simplify what is left, then
+commit. You do the work yourself. Do not dispatch an agent.
 
-The agent runs two passes internally: the first finds correctness bugs and
-fixes them, the second removes the complexity the first does not care about.
-The order is fixed inside the agent, because a simplification pass over buggy
-code simplifies the wrong thing.
-
-This skill runs unattended. The user chose autofix and auto-commit, so do not
-ask for approval once the agent returns. The agent runs unattended too: it
-applies its own findings, and a stop to ask blocks a caller such as `develop`
-that invoked the whole chain to run without a user present.
+This skill runs unattended. The user chose autofix and auto-commit, so apply
+every finding and do not ask for approval.
 
 ## Steps
 
-1. **Check the working tree.** When a caller passed a base, use it. `merge`,
-   `rebase`, and `develop` all resolve a base before they invoke anything, so
-   re-deriving one discards a value the caller already has and costs a `gh` round
-   trip. Absent one, resolve it:
+1. **Find the changed code.** When a caller passed a base, use it. Absent one,
+   resolve it:
 
    1. PR base: `gh pr view --json baseRefName -q .baseRefName` (if a PR exists).
    2. Upstream tracking branch, minus the remote prefix:
       `git rev-parse --abbrev-ref --symbolic-full-name @{u}`.
    3. The repository default branch.
-
-   `merge` and `rebase` fall back to `development` at tier 3 rather than the
-   default branch. Do not copy that: those skills run on repos where
-   `development` is the integration branch, and polish runs anywhere.
 
    Then check for work to review:
 
@@ -44,145 +31,103 @@ that invoked the whole chain to run without a user present.
    ```
 
    If the tree is clean **and** the count is zero, there is nothing to review.
-   Say so in one line and stop.
+   Say so in one line and stop. Otherwise the changed code is
+   `git diff <base>...HEAD` plus the working tree. Review the changed lines and
+   the code they touch. Do not fix a problem that was already there before this
+   branch.
 
-   If either is non-empty, continue. The agent works on the changed code.
+2. **Pass 1: correctness.** Find bugs that make the code do the wrong thing,
+   then fix them.
 
-2. **Polish.** Dispatch the `code-polisher` agent through the host dispatch mapping with the base you resolved in step 1. It
-   reviews the changed code for correctness bugs and applies the fixes, then
-   simplifies what is left, in that order.
+   Look for: off-by-one and boundary errors, wrong comparison operators,
+   inverted conditions, missing null and empty cases, missing tenant or scope
+   filters on queries, unhandled error paths, resource leaks, race conditions,
+   and state mutated where a copy was meant.
 
-   Dispatch it once, in the foreground: the commit in step 4 needs its result,
-   and nothing else can run while it works.
+   For each candidate, write the failure first: the input or state that reaches
+   it, and the wrong output or crash it produces. A candidate with no such
+   failure is not a bug. Drop it. Apply the smallest fix that removes the
+   failure.
 
-   Tell it the base explicitly. It resolves nothing on its own, and without a
-   base it cannot tell which lines this branch changed.
+3. **Pass 2: simplification.** Only after pass 1 is applied. Simplifying over
+   buggy code simplifies the wrong thing.
 
-   The agent applies its own findings and never commits. Record the files it
-   reports and each finding under `Fixed`, `Simplified`, and `Not applied` -
-   those are what the report in step 4 is built from.
+   Look for: code that reimplements something the repository or the standard
+   library already provides, an abstraction with one implementation, a
+   parameter or branch nothing reaches, a hand-rolled loop where an existing
+   helper fits, and repeated work that a single call covers.
 
-3. **Verify.** Figure out how this repo verifies a build before running
-   anything - do not assume a language or tool. Look at the project's
-   AGENTS.md / CLAUDE.md / README, the build config, and lockfiles to find the right
-   command. Prefer whatever the project documents. A repo can also keep its
-   checks as scripts beside the code rather than in a root-level runner, so
-   look there too before concluding there is none.
+   Match the surrounding code. Never change behaviour in this pass. Never touch
+   a file outside the changed set. If a fix needs a decision you cannot make,
+   leave the code alone and report it as not applied.
 
-   When a caller already resolved the check, use what it found rather than
-   repeating the discovery.
+4. **Verify.** Figure out how this repo verifies a build before running
+   anything. Look at AGENTS.md / CLAUDE.md / README, the build config, and
+   lockfiles. Prefer what the project documents. Checks can live as scripts
+   beside the code, so look there too. When a caller already resolved the check,
+   use it.
 
    If the failure looks like stale or missing dependencies, run the install
-   command once before treating it as real - the same rule `merge` and `rebase`
-   carry. An agent that touched a manifest produces exactly this false positive.
+   command once before treating it as real.
 
    If the check still fails, do not commit. Report the failure with the command
-   output and stop. A failing check after an autofix means the agent broke
-   something, and the user needs the broken state to look at.
+   output and stop.
 
-   If the project declares no check, say so in the report. Never claim
-   verification that did not run.
+   If the project declares no check, say so. Never claim verification that did
+   not run.
 
-4. **Commit.** If the current branch is the repository default branch, branch
-   **before** committing, so the default branch never carries the commit:
+5. **Commit.** If the current branch is the repository default branch, branch
+   **before** committing:
 
    ```bash
    git switch -c polish/$(git rev-parse --short HEAD)
    ```
 
    Never do this when another skill invoked polish. A caller has already named
-   the branch it expects to push and to open a pull request from, and switching
-   underneath it strands the work on a branch the caller does not know. When
-   polish is invoked by a caller and the branch is the default branch, stop and
-   say so instead.
+   the branch it expects to push. When a caller invoked polish on the default
+   branch, stop and say so.
 
-   Then stage the files the agent reported, by path, and commit:
+   Stage the files you edited, by path, and commit:
 
    ```bash
    git add <path> [<path>...]
-   git commit -m "refactor: apply code review and simplification findings" \
-              -m "Polish-passes: review,simplify"
+   git commit -m "refactor: apply code review and simplification findings"
    ```
 
-   The `Polish-passes` trailer is the marker `manage-pr` compose step 0 reads to
-   decide whether polish already ran. Keep it on every polish commit. The
-   subject is prose and may be reworded; the trailer is the contract.
+   Use `fix:` instead of `refactor:` when you fixed a real bug. Add a body only
+   when the fixes are not obvious from the diff. When you changed nothing, do
+   not commit.
 
-   When the agent changed nothing, add `--allow-empty`: the commit only records
-   the pass.
-
-   Git reads trailers from the last paragraph only. When the project requires a
-   `Co-Authored-By` trailer on commits, put it in the same paragraph as
-   `Polish-passes`, never in a later `-m`. A separate paragraph makes git ignore
-   `Polish-passes`, and the PR-guard hook then denies as if polish never ran:
-
-   ```bash
-   git commit -m "refactor: ..." -m "$(printf 'Polish-passes: review,simplify\nCo-Authored-By: ...')"
-   ```
-
-   Check the result before reporting: the trailer command in `manage-pr`
-   compose step 0 must print `review,simplify` on the new `HEAD`.
-
-   Never `git add -A`, and never `git commit -a`: the tree can hold unrelated
-   edits, and a caller such as `merge` may have just restored a stash, so a
-   blanket stage sweeps work the agent never reviewed into this commit. List
-   the paths the agent reported.
-
-   Use `fix:` instead of `refactor:` when the agent fixed a real bug. Add a body
-   only when the fixes are not obvious from the diff. Never add a generated-by
-   footer or a Claude attribution tag.
-
-   Then capture the new commit for the report:
-
-   ```bash
-   git rev-parse --short HEAD
-   ```
+   Never `git add -A` or `git commit -a`: the tree can hold unrelated edits.
+   Never add a generated-by footer or a Claude attribution tag.
 
 ## The report
 
-The report is the whole user-facing output. One sentence per finding. No
-preamble, no restatement of the diff, no next-step suggestions.
+One sentence per finding. No preamble, no restatement of the diff, no next-step
+suggestions.
 
 ```
 Reviewed 6 files.
 
 Fixed
 - Token expiry check used `<`, so a token expiring this second passed.
-- The tenant filter was missing on the device serial lookup.
 
 Simplified
 - Replaced the hand-rolled retry loop with the existing `withRetry` helper.
-- Dropped the single-implementation `PassStore` interface.
 
 Checked with `<the project's own check>`. Committed as a1b2c3d.
 ```
 
-Rules for the report:
-
-- One line per finding, one sentence, present the problem not the process.
-- Omit a heading with nothing under it. A pass that found nothing gets the one
-  line the agent returned: `Review found nothing.` or `Nothing to simplify.`
+- Omit a heading with nothing under it. A pass that found nothing gets one
+  line: `Review found nothing.` or `Nothing to simplify.`
 - The last line names the check that ran and the commit SHA. When no check
   ran, say `No project check configured.`
-- Never list a finding the agent reported but did not apply. Its `Not applied`
-  lines go after the check line: `Not applied: <one sentence>.`
-
-## Rules
-
-The steps state their own guards. These fail silently and across files, so
-check them before every commit:
-
-- Never `git add -A` or `git commit -a`. Stage by path.
-- Never omit the `Polish-passes` trailer. It is how a caller knows polish ran,
-  and the PR-guard hook denies a `gh pr create` or `gh pr edit` without it.
-- Never add a generated-by footer or a Claude attribution tag.
-- Never ask whether to run. Invoking this skill is the authorization: it
-  rewrites code and commits by design, and that is what the user chose. An
-  already-open pull request does not change this — polish it and say so.
+- List a finding you did not apply after the check line:
+  `Not applied: <one sentence>.`
 
 ## Errors
 
 | Case | Response |
 | --- | --- |
-| The agent leaves a merge conflict marker or a broken file | Report the file and stop before the commit. |
+| A fix leaves a merge conflict marker or a broken file | Report the file and stop before the commit. |
 | On the default branch, invoked by another skill | Stop and say so. Do not switch branches under a caller. |

@@ -471,7 +471,6 @@ Two things the ledger deliberately does not do:
 | A recorded worktree that is gone on resume | Create a new one off `main`, record it, say so |
 | A task in Notion that the ledger's order lacks | Report it, do not add it to the running stack |
 | No matching card status option | Skip the status write, say so, continue |
-| `polish` fails its check at loop step 7 | Record `stopped` with `stoppedBecause`. Never resume it automatically |
 | The pull request guard hook denies `gh` | Fix the title or body per its reason and retry. Never bypass it |
 
 ## Rules
