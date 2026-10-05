@@ -5,6 +5,8 @@ description: Rebase the current feature branch onto a new base branch, keeping o
 
 # rebase
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Move the current feature branch onto a **new base branch** so it carries only the
 commits that were authored on the feature branch — not the commits it inherited
 from its old base. The result: your changes replayed cleanly on top of the new base.
@@ -36,7 +38,7 @@ stop and tell the user.
 
 Figure out how this repo installs dependencies and verifies a build before
 running anything — do not assume a language or tool. Look at the project's
-CLAUDE.md / README, the build config, and lockfiles to find the right commands
+AGENTS.md / CLAUDE.md / README, the build config, and lockfiles to find the right commands
 (e.g. dependency install, type/compile check, build). Prefer whatever the
 project documents.
 

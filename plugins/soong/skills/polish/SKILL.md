@@ -5,6 +5,8 @@ description: Run a code review with autofix, then a simplification pass, then co
 
 # polish
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 One agent over the current changes, its findings applied, one commit, one
 short report.
 
@@ -46,8 +48,7 @@ that invoked the whole chain to run without a user present.
 
    If either is non-empty, continue. The agent works on the changed code.
 
-2. **Polish.** Dispatch the `code-polisher` agent (Agent tool,
-   `subagent_type: code-polisher`) with the base you resolved in step 1. It
+2. **Polish.** Dispatch the `code-polisher` agent through the host dispatch mapping with the base you resolved in step 1. It
    reviews the changed code for correctness bugs and applies the fixes, then
    simplifies what is left, in that order.
 
@@ -63,7 +64,7 @@ that invoked the whole chain to run without a user present.
 
 3. **Verify.** Figure out how this repo verifies a build before running
    anything - do not assume a language or tool. Look at the project's
-   CLAUDE.md / README, the build config, and lockfiles to find the right
+   AGENTS.md / CLAUDE.md / README, the build config, and lockfiles to find the right
    command. Prefer whatever the project documents. A repo can also keep its
    checks as scripts beside the code rather than in a root-level runner, so
    look there too before concluding there is none.

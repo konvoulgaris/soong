@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"${PLUGIN_ROOT}/hooks/scripts/conventional-commit-guard.sh\"",
+            "statusMessage": "Checking PR conventions",
+            "type": "command"
+          },
+          {
+            "command": "bash \"${PLUGIN_ROOT}/hooks/scripts/superpowers-commit-guard.sh\"",
+            "statusMessage": "Keeping superpowers notes out of git",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash \"${PLUGIN_ROOT}/hooks/scripts/notion-content-reminder.sh\"",
+            "statusMessage": "Reminding to follow Notion content style",
+            "type": "command"
+          }
+        ],
+        "matcher": "mcp__.*__notion-(create-pages|update-page|create-comment)"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"${PLUGIN_ROOT}/hooks/scripts/engineering-principles.sh\"",
+            "statusMessage": "Loading engineering principles",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,6 +5,8 @@ description: Style and format rules for writing content to Notion. Use whenever 
 
 # write-notion-content
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Rules for how content reads when written to Notion. Style only. This skill does
 not move status fields, create pages, or make MCP calls.
 

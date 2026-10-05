@@ -5,6 +5,8 @@ description: Merge a base branch into the current feature branch and push the re
 
 # merge
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Merge the **base branch** into the current feature branch and push. "Base" almost
 always means the branch this feature was cut from or the PR's base branch — resolve
 it, don't assume a branch literally called `development`.
@@ -24,7 +26,7 @@ Report which base you resolved before merging.
 
 Figure out how this repo installs dependencies and verifies a build before
 running anything — do not assume a language or tool. Look at the project's
-CLAUDE.md / README, the build config, and lockfiles to find the right commands
+AGENTS.md / CLAUDE.md / README, the build config, and lockfiles to find the right commands
 (e.g. dependency install, type/compile check, build). Prefer whatever the
 project documents.
 

@@ -5,13 +5,15 @@ description: Record what this repo needs for soong's skills to run - whether it 
 
 # soong-setup
 
+Read [host operations](reference/hosts.md) before running this workflow.
+
 Configure this repo for soong's skills. Other skills ask this one's script whether
 what they need is present, and send the user here when it is not.
 
 Start by telling the user, in one line, what this does. For example:
 
 > `soong-setup` records what this repo needs for soong's skills: the Notion
-> databases `/architect` writes to, and whether commits here carry a scope.
+> databases `/develop` reads, and whether commits here carry a scope.
 
 ## Arguments
 
@@ -27,7 +29,7 @@ capability, configure that one alone.
 - **File:** `${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json`. This is user
   config, so it lives under `XDG_DATA_HOME`. The PR records that `manage-pr` writes
   are regenerable state and live under `XDG_STATE_HOME` instead.
-- **Script:** `${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh`
+- **Script:** `$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh`
 - Keyed by the repo directory name, taken from the main checkout, so every linked
   worktree of one repo shares a single mapping.
 - A config written before the rename, as `architect.json`, is copied forward
@@ -38,7 +40,7 @@ capability, configure that one alone.
 
 | Capability | Keys                                               | Used by                |
 | ---------- | -------------------------------------------------- | ---------------------- |
-| `notion`   | `useNotion`, `roadmapDb`, `taskDb`, `taskTemplate` | `architect`, `develop` |
+| `notion`   | `useNotion`, `roadmapDb`, `taskDb`, `taskTemplate` | `develop` |
 | `commits`  | `requireScope`                                     | the `conventional-commit-guard` hook    |
 
 `taskTemplate` is optional. Every other key is required by its capability.
@@ -58,7 +60,7 @@ not a guard, so an unconfigured repo is stopped at the PR and told to come here.
 1. **See what is missing.**
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check [capability]
+   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" check [capability]
    ```
 
    Exit 0 means nothing is missing: show the user the current state, ask whether
@@ -70,8 +72,8 @@ not a guard, so an unconfigured repo is stopped at the PR and told to come here.
 
 2. **For `notion`, ask whether this repo uses Notion at all.**
 
-   > Does this repo track work on Notion? `/architect` and `/develop` write
-   > roadmap items and tasks there. Answering no records that, and they stay
+   > Does this repo track work on Notion? `/develop` reads roadmap items and
+   > task cards there. Answering no records that, and `/develop` stays
    > unavailable here.
 
    This is an explicit answer, not an inference from whether the user has ids to
@@ -82,7 +84,7 @@ not a guard, so an unconfigured repo is stopped at the PR and told to come here.
    On no, write it and skip to the `commits` question:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" set --use-notion false
+   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" set --use-notion false
    ```
 
    On yes, continue to the next step. Supplying a database id records the same
@@ -99,12 +101,12 @@ not a guard, so an unconfigured repo is stopped at the PR and told to come here.
    user the resolved database titles so they can catch a wrong paste.
 
    If either database does not resolve, or the user cannot supply one, **stop
-   here.** Write nothing. Say which database was invalid and that `/architect`
+   here.** Write nothing. Say which database was invalid and that `/develop`
    stays unavailable for this repo until setup completes.
 
 6. **Offer the task template.** List the templates available on the task database
-   and let the user pick one, or skip. The template is optional; `architect` falls
-   back to the database's own default when it is null.
+   and let the user pick one, or skip. The template is optional; the database's
+   own default applies when it is null.
 
 7. **For `commits`, ask one question:** does this repo require a scope on commit
    and PR subjects?
@@ -127,7 +129,7 @@ not a guard, so an unconfigured repo is stopped at the PR and told to come here.
    about; the script merges, so it does not disturb the rest.
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" set \
+   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" set \
      [--roadmap-db "<id>"] [--task-db "<id>"] [--task-template "<id>"] \
      [--require-scope true|false] [--use-notion true|false]
    ```

@@ -1,0 +1,20 @@
+{
+  "interface": {
+    "displayName": "soong"
+  },
+  "name": "soong",
+  "plugins": [
+    {
+      "category": "Productivity",
+      "name": "soong",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/soong",
+        "source": "local"
+      }
+    }
+  ]
+}

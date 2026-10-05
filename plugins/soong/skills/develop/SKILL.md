@@ -1,15 +1,14 @@
 ---
 name: develop
-description: Take a Notion roadmap item and build its whole task stack as stacked pull requests, one pull request per task, asking any questions the task cards leave open before writing code. Use when the user runs /develop, or asks to implement a roadmap item, build out a stack of tasks, or start development on an architected feature. Requires the repo to be configured via soong-setup first.
+description: Take a Notion roadmap item and build its whole task stack as stacked pull requests, one pull request per task, asking any questions the task cards leave open before writing code. Use when the user runs /develop, or asks to implement a roadmap item, build out a stack of tasks, or start development from prepared task cards. Requires the repo to be configured via soong-setup first.
 ---
 
 # develop
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Take a Notion roadmap item, walk every task on it in stack order, and land each
 one as its own reviewable pull request based on the previous task's branch.
-
-`architect` plans. This skill implements. It is the second half, and it replaces
-the handoff document `architect` used to end with.
 
 The user answers questions once, up front. Then the stack builds unattended.
 
@@ -39,25 +38,14 @@ The user answers questions once, up front. Then the stack builds unattended.
 
 ## Names
 
-Two names are derived, not chosen, so that a later run can find what an earlier
-run created. Both are computed before anything is created, and neither depends on
-the ledger.
+Derive a task slug from its title: lowercase it, replace each run of
+non-alphanumeric characters with one hyphen, and remove edge hyphens.
+Use the branch prefix and worktree mechanism from the host operations reference.
 
-- **A task's branch** is `claude/<slug>`, where `<slug>` is the task title
-  lowercased, with every run of non-alphanumeric characters replaced by a single
-  hyphen and leading and trailing hyphens removed.
-- **The stack's worktree** is `.claude/worktrees/develop-<roadmap-item-id>`,
-  under the repository's main checkout. The roadmap item id is the argument the
-  user passed, so this is computable on the very first step of any run.
-
-Deriving both from data that exists before the run starts is what makes the
-interrupted-work check and the worktree reuse check possible. A name invented at
-creation time could not be recomputed by the run that has to find it.
-
-The branch name is derived once, in first-run step 6, and recorded in the ledger
-for every task. Later steps and later runs read it from there. The worktree path
-is derived from the roadmap item id on every run, which needs nothing but the
-argument the user passed.
+Record every derived branch name in the ledger before creating branches.
+Record the actual worktree path returned by the host. A resume reads both from
+the ledger, even when the active host differs from the host that started work.
+A retitled card must not rename an existing branch.
 
 ## First run
 
@@ -68,11 +56,11 @@ separately. Resume is below.
 On a first run, nothing is created and nothing is written until step 6. Every
 earlier step can stop for free.
 
-1. **Check configuration.** Run the same script `architect` Step 1 runs:
+1. **Check configuration.** Run:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check notion
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
+   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" check notion
+   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" get
    ```
 
    `check notion` exit 0 continues to `get`, which reads the ids. Exit 3 means
@@ -102,10 +90,8 @@ earlier step can stop for free.
    - **Count.** The list has as many entries as the query returned. This is
      exact, and a mismatch stops.
    - **Correspondence.** Each list entry maps to exactly one task page. This is
-     a judgment call, not a string equality: `architect` writes list entries
-     naming a scope and a dependency, and task titles naming a single change, so
-     the two describe the same work in different words. Map on the work
-     described. Any entry that maps to no task, or to more than one, stops.
+     a judgment call, not a string equality. Map entries to task titles by the
+     work described. Any entry that maps to no task, or to more than one, stops.
 
    On a stop, show the two lists side by side, say which entries could not be
    mapped, and ask. Do not guess an order. Building a stack in the wrong order is
@@ -118,12 +104,9 @@ earlier step can stop for free.
    blocking dependent, and offer the two fixes, which are to skip those too or to
    not skip at all.
 
-   **Known ceiling.** `architect` writes linear stacks, so in practice a skip is
-   accepted only for a contiguous tail of the stack, and refused for anything
-   with work above it. That is the intended behavior and not a defect: the refusal
-   is what stops a task from being built on a base that was never created. Say so
-   plainly in the refusal, so the user is not left guessing why a middle task
-   cannot be skipped alone.
+   For a linear stack, a skip is accepted only for a contiguous tail. Refuse a
+   skip with work above it because that task would be built on a base that was
+   never created. Say so plainly in the refusal.
 
    This step reads the "stacks on" prose that is not trusted for
    **ordering**. Trusting it for **dependency** is deliberate: ordering has a
@@ -139,9 +122,9 @@ earlier step can stop for free.
 
    Read the cards in subagents, not on the main thread. Every card body lands in
    context otherwise, and the only thing the rest of this run needs from a card is
-   its gaps and the answers to them. Dispatch one Agent tool call per unskipped
-   task, `subagent_type: Explore`, `model: sonnet`, **all in one message** so they
-   run at the same time. The cards do not depend on each other, so reading them
+   its gaps and the answers to them. Dispatch one read-only exploration agent per unskipped
+   task through the host mapping. Dispatch independent tasks before waiting,
+   within the host's concurrency limit. The cards do not depend on each other, so reading them
    in sequence buys nothing.
 
    Give each agent one task's page id and the roadmap item id. The gaps are in the
@@ -168,29 +151,25 @@ earlier step can stop for free.
    invoke `brainstorming`, whose checklist ends in a written design document, its
    own review loop, and an approval gate, none of which belongs here. Do not
    batch the questions into one message, and do not write a design document. The
-   card is the spec, and `architect` already ran the spec review loop over it.
+   cards are the source of truth for this workflow.
 
    Hold the answers in the conversation for now. They are written to the ledger in
    step 6, because this step must stay free to stop.
 
 5. **Create the worktree.** One worktree for the whole stack, off `main`.
 
-   The worktree's path is derived, per **Names** above, so it is the same for
-   every run of this roadmap item. Check `git worktree list` for that exact path
-   before creating one. A previous run can have died between this step and step 6,
-   leaving a worktree on disk with no ledger entry to point at it. Reuse it and
-   say so. Without this check that run's worktree is orphaned and a second one is
-   created beside it.
+   Use the host operations reference to select the worktree mechanism.
+   Inspect attached worktrees and `git worktree list` before creating one.
+   Reuse a matching stack worktree from an interrupted run and report the reuse.
+   For a managed worktree, record the returned path rather than inventing one.
+   For a Git fallback, derive the directory from the roadmap item id.
 
-   That crash also means the gap questions get asked again, since a run with no
-   ledger entry is a first run by definition. Say plainly that the earlier answers
-   were lost, rather than re-asking as though nothing happened.
+   If a crash left no ledger entry, explain that the earlier gap answers were
+   lost. Re-run the gap pass before continuing.
 
-   Confirm the worktree directory is ignored before creating anything inside it.
-   This repository ignores `.claude/worktrees/` through `.git/info/exclude`, which
-   is local to one clone and never travels with it, so a fresh clone would leave
-   the path untracked rather than ignored. Add it to `.gitignore` and commit that
-   if it is not already ignored there.
+   Verify project-local worktree directories are ignored before creating files
+   inside them. Add the selected directory to `.gitignore` if necessary.
+   Host-managed worktrees outside the repository do not require this change.
 
    Never run in the worktree the user is sitting in: branches advance in place
    here, and swapping a branch under an open editor is the failure this avoids.
@@ -407,7 +386,7 @@ A stop at task 4 must not mean rebuilding tasks 1 through 3.
 
 - **File:** `${XDG_STATE_HOME:-$HOME/.local/state}/soong/develop-ledger.json`.
   Regenerable state, so it shares a home with the pull request records rather
-  than the `architect` config, and it is never committed.
+  than user configuration, and it is never committed.
 - **Keyed** by project, then roadmap item id. The project name comes from the
   **common** git dir, never `--show-toplevel`, so every linked worktree of one
   repo shares one entry:
@@ -513,4 +492,3 @@ Two things the ledger deliberately does not do:
 - Notion writes do not reverse. Status is the only card write, and the body is
   never touched.
 - Never guess a Notion status value, a card id, or a database id.
-
