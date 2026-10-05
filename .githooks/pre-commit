@@ -1,0 +1,6 @@
+#!/bin/sh
+# Superpowers specs and plans are local working notes. A commit must not add or change them.
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '^docs/superpowers/'; then
+  echo 'pre-commit: do not commit files in docs/superpowers/. Unstage them with: git restore --staged docs/superpowers' >&2
+  exit 1
+fi

@@ -49,6 +49,9 @@ Not required, but they pair well with soong:
 - **[i-have-adhd](https://github.com/ayghri/i-have-adhd)** — stops a coding
   agent from burying the answer. ADHD-friendly output. The name is satirical
   (I hope), but the results are true 😛
+- **[superpowers](https://github.com/obra/superpowers)** — brainstorming, planning,
+  and debugging workflows. soong's guard keeps its specs and plans in
+  `docs/superpowers/` out of your commits.
 
 ## Codex
 

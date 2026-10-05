@@ -7,6 +7,11 @@
             "command": "bash \"${PLUGIN_ROOT}/hooks/scripts/conventional-commit-guard.sh\"",
             "statusMessage": "Checking PR conventions",
             "type": "command"
+          },
+          {
+            "command": "bash \"${PLUGIN_ROOT}/hooks/scripts/superpowers-commit-guard.sh\"",
+            "statusMessage": "Keeping superpowers notes out of git",
+            "type": "command"
           }
         ],
         "matcher": "Bash"

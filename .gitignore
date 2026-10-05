@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 # JetBrains IDEs
 .idea/
+
+# Superpowers specs and plans are local working notes
+docs/superpowers/
