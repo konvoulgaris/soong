@@ -1,7 +1,7 @@
 ---
 name: architect-cobrain
 description: Reviews an architecture spec and its proposed stack of PRs, then returns prioritized findings and recommended steps. Use when a spec has been brainstormed and needs a second opinion before anything is written to Notion. Read-only - never edits files and never writes to Notion.
-model: fable
+model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
