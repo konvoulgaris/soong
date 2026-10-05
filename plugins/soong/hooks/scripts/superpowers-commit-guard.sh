@@ -34,7 +34,7 @@ subcommand commit || exit 0
 
 files=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
 # `commit -a` stages tracked modifications at commit time, after this hook runs.
-if printf '%s' "$cmd" | grep -Eq 'commit[^|;&]*([[:space:]]-[a-zA-Z]*a|--all)'; then
+if printf '%s' "$cmd" | grep -Eq 'commit[^|;&]*([[:space:]]-[a-zA-Z]*a|--all([[:space:]]|$))'; then
   files="$files
 $(git diff --name-only --diff-filter=ACMR 2>/dev/null)"
 fi
