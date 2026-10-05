@@ -1,0 +1,12 @@
+name: Soong
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  generated-configs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/sync-agent-configs.sh --check

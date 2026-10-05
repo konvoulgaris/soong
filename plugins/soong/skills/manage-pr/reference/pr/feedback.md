@@ -21,9 +21,9 @@ starting.
 Gather in a subagent, not on the main thread. The GraphQL response carries every
 thread including the resolved ones, and the walk then needs the code around each
 comment on top of that. All of it stays in context for the rest of the walk, and
-none of it is what you reply from. Dispatch one Agent tool call,
-`subagent_type: Explore`, `model: sonnet`. `Explore` is read-only, so the
-gathering pass cannot touch the code the walk is about to change.
+none of it is what you reply from. Dispatch one read-only exploration agent through the host mapping loaded by
+`manage-pr`. Include explicit restrictions against file edits and external
+writes. Use host-enforced restrictions when available.
 
 Give the agent the PR number from the resolve step, plus the owner and repo,
 which that step does not return

@@ -5,6 +5,8 @@ description: Use for any work on a pull request — writing or rewriting its tit
 
 # manage-pr
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Everything that touches a pull request: composing its title and description, and
 replying to reviewers on it. The plugin's PR-guard hook checks both, so getting
 these conventions right is what lets the `gh` command through.

@@ -5,6 +5,8 @@ description: Use when asked to sync a branch's changes into its linked Notion ca
 
 # sync-pr-to-notion
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Update the Notion card linked to the current branch with a high-level description of
 what the branch changes. This skill describes work; it does not do work.
 
@@ -40,7 +42,7 @@ what the branch changes. This skill describes work; it does not do work.
 4. **Read the changes at a high level.** Do not diff on the main thread. A branch
    diff is long, it is read once for its shape, and every line of it stays in
    context for the rest of the run. Dispatch a subagent to read it and return the
-   shape instead: Agent tool, `subagent_type: Explore`, `model: sonnet`.
+   shape instead, using the host mapping for read-only exploration.
 
    Resolve the base first, on the main thread, so the agent is given a branch
    name and not a placeholder: the pull request's base

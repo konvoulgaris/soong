@@ -5,6 +5,8 @@ description: Applies ASD-STE100 Simplified Technical English to technical docume
 
 # write-technical-content
 
+Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
+
 Rules for writing technical documentation, derived from ASD-STE100 Simplified
 Technical English and adapted for software.
 
@@ -42,7 +44,7 @@ This skill covers documentation. Three kinds of text belong elsewhere:
 * PR titles and descriptions: use `manage-pr`.
 * Notion content: use `write-notion-content`.
 * Commit messages: follow the Conventional Commits rule in the repository
-  `CLAUDE.md`. No skill governs commit message style, and `manage-pr` does not:
+  `AGENTS.md` or `CLAUDE.md`. No skill governs commit message style, and `manage-pr` does not:
   it owns the PR title, which borrows Conventional Commit syntax.
 
 The Notion boundary matters because the two skills give opposite instructions.

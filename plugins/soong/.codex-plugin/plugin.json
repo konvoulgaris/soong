@@ -3,6 +3,8 @@
     "name": "konvoulgaris"
   },
   "description": "Reusable software engineering workflows for Claude Code and Codex.",
+  "hooks": "./hooks/hooks.codex.json",
   "name": "soong",
+  "skills": "./skills/",
   "version": "0.21.0"
 }
