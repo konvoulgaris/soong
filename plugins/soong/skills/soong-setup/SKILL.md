@@ -1,6 +1,6 @@
 ---
 name: soong-setup
-description: Record what this repo needs for soong's skills to run - whether it uses Notion at all and which roadmap and task databases it maps to, and whether its commits carry a Conventional Commits scope. Use when the user runs /soong-setup, when another skill reports the repo is not configured, or when the user wants to change what a repo is configured for. A repo can record that it does not use Notion, which settles that capability for good. Stops without writing anything if the user says the repo uses Notion but does not supply valid databases.
+description: Record what this repo needs for soong's skills to run - whether it uses Notion at all and which roadmap and task databases it maps to, whether its commits carry a Conventional Commits scope, and where its skills live. Use when the user runs /soong-setup, when another skill reports the repo is not configured, or when the user wants to change what a repo is configured for. A repo can record that it does not use Notion, which settles that capability for good. Stops without writing anything if the user says the repo uses Notion but does not supply valid databases.
 ---
 
 # soong-setup
@@ -42,6 +42,7 @@ capability, configure that one alone.
 | ---------- | -------------------------------------------------- | ---------------------- |
 | `notion`   | `useNotion`, `roadmapDb`, `taskDb`, `taskTemplate` | `develop` |
 | `commits`  | `requireScope`                                     | the `conventional-commit-guard` hook    |
+| `skills`   | `skillsDir`                                        | `create-cross-agent-skill`              |
 
 `taskTemplate` is optional. Every other key is required by its capability.
 
@@ -125,16 +126,29 @@ not a guard, so an unconfigured repo is stopped at the PR and told to come here.
    this hook runs on every repo on the machine and denying `git commit -m "wip"`
    in each one nobody has set up is how a guard gets switched off for good.
 
-8. **Write what was gathered.** Pass only the flags for the capabilities you asked
+8. **For `skills`, ask where this repo keeps its skills.** Recommend `docs/skills`.
+
+   > Where should this repo's skills live? Claude Code and Codex read them from
+   > different directories (`.claude/skills`, `.agents/skills`), so
+   > `create-cross-agent-skill` keeps one canonical copy here and mirrors it to both.
+   > `docs/skills` is the default.
+
+   Accept any repo-relative path other than the two mirror directories. If the
+   repo already has skills in `.claude/skills` or `.agents/skills`, say that
+   `create-cross-agent-skill` moves them into the chosen directory the first time
+   it runs. Setup itself moves nothing.
+
+9. **Write what was gathered.** Pass only the flags for the capabilities you asked
    about; the script merges, so it does not disturb the rest.
 
    ```bash
    bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" set \
      [--roadmap-db "<id>"] [--task-db "<id>"] [--task-template "<id>"] \
-     [--require-scope true|false] [--use-notion true|false]
+     [--require-scope true|false] [--use-notion true|false] \
+     [--skills-dir "<path>"]
    ```
 
-9. **Confirm** the stored record back to the user, and name which skills just
+10. **Confirm** the stored record back to the user, and name which skills just
    became available.
 
 ## Rules
