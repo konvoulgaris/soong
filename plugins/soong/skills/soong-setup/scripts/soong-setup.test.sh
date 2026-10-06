@@ -376,12 +376,28 @@ check "--project with no value"     2 "$(run check notion --project)"
 # --- check with no capability sweeps everything ------------------------------
 check "sweep exits 3 when any capability is missing" 3 "$(run check --project partial)"
 bash "$script" set --require-scope true --roadmap-db R3 partial >/dev/null 2>&1
+check "sweep exits 3 while skills is unanswered" 3 "$(run check --project partial)"
+bash "$script" set --skills-dir docs/skills partial >/dev/null 2>&1
 check "sweep exits 0 when all are satisfied" 0 "$(run check --project partial)"
 sweep="$(bash "$script" check --project chk 2>&1)"
 case "$sweep" in
-  *notion*commits*|*commits*notion*) check "sweep lists both capabilities" 0 0 ;;
-  *) check "sweep lists both capabilities" "notion and commits" "$sweep" ;;
+  *notion*commits*skills*) check "sweep lists every capability" 0 0 ;;
+  *) check "sweep lists every capability" "notion, commits and skills" "$sweep" ;;
 esac
+
+# --- skills ------------------------------------------------------------------
+check "skills unset exits 3" 3 "$(run check skills --project chk)"
+check "set skills-dir exits 0" 0 "$(run set --skills-dir docs/skills chk)"
+check "skills-dir stored" docs/skills "$(bash "$script" get chk | jq -r .skillsDir)"
+check "skills satisfied" 0 "$(run check skills --project chk)"
+bash "$script" set --skills-dir=skills/ chk >/dev/null 2>&1
+check "trailing slash trimmed" skills "$(bash "$script" get chk | jq -r .skillsDir)"
+check "skills-dir leaves other keys" R "$(bash "$script" get chk | jq -r .roadmapDb)"
+check "absolute skills-dir exits 2" 2 "$(run set --skills-dir /etc chk)"
+check "root skills-dir exits 2" 2 "$(run set --skills-dir / chk)"
+check "parent skills-dir exits 2" 2 "$(run set --skills-dir ../x chk)"
+check "dot skills-dir exits 2" 2 "$(run set --skills-dir . chk)"
+check "bad skills-dir not stored" skills "$(bash "$script" get chk | jq -r .skillsDir)"
 
 # a corrupt config is an error, never "unconfigured"
 seed 'not json at all'

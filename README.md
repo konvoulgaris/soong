@@ -107,6 +107,20 @@ The script works from any directory. It writes only repository-owned outputs.
 It does not change personal configuration, credentials, or installed caches.
 Run check mode in CI to detect uncommitted generated changes.
 
+## Share skills across agents
+
+`/create-cross-agent-skill` keeps one canonical skills directory per repo
+(`docs/skills` by default, recorded by `/soong-setup skills`) and mirrors it to
+`.claude/skills` for Claude Code and `.agents/skills` for Codex. Skills that
+already live in a mirror are moved into the canonical directory on request.
+
+```sh
+bash plugins/soong/skills/create-cross-agent-skill/scripts/sync-skills.sh docs/skills
+bash plugins/soong/skills/create-cross-agent-skill/scripts/sync-skills.sh --check docs/skills
+```
+
+Edit the canonical directory only. Run check mode in CI to detect stale mirrors.
+
 ## Host differences
 
 Skills resolve scripts from their installed paths. The shared

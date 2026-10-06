@@ -5,11 +5,11 @@
 #   soong-setup.sh check [capability] [--project NAME]
 #   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
 #                     [--require-scope true|false] [--use-notion true|false]
-#                     [project]
+#                     [--skills-dir PATH] [project]
 #
 # Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 # Shape:  { "<project>": { roadmapDb, taskDb, taskTemplate, requireScope,
-#                          useNotion, updatedAt } }
+#                          useNotion, skillsDir, updatedAt } }
 #
 # useNotion false satisfies the notion capability on its own: it is how a repo
 # says it has no Notion side, so check stops reporting the databases as missing.
@@ -40,16 +40,17 @@ Read or write soong's per-repo configuration.
   soong-setup.sh check [capability] [--project NAME]
   soong-setup.sh set [--roadmap-db ID] [--task-db ID] [--task-template ID]
                     [--require-scope true|false] [--use-notion true|false]
-                    [project]
+                    [--skills-dir PATH] [project]
 
 Config: ${XDG_DATA_HOME:-$HOME/.local/share}/soong/soong.json
 get exits 3 when the project has no mapping, so a caller can branch on it.
 check exits 3 when a capability's required keys are absent, 0 when they are all
 present, and 2 for an unknown capability. With no capability it sweeps all of
-them. Capabilities: notion, commits.
+them. Capabilities: notion, commits, skills.
 set merges: it writes only the keys you pass, and needs at least one flag.
 --use-notion false records that the repo has no Notion side, which satisfies the
 notion capability without any database id.
+--skills-dir records the repo-relative directory holding the canonical skills.
 EOF
 }
 
@@ -75,11 +76,12 @@ legacy="$dir/architect.json"
 #
 # Optional keys are deliberately absent from this table. taskTemplate is optional
 # for notion, so it appears nowhere and never blocks a capability.
-capabilities="notion commits"
+capabilities="notion commits skills"
 required_keys() {
   case "$1" in
     notion)  echo "roadmapDb taskDb" ;;
     commits) echo "requireScope" ;;
+    skills)  echo "skillsDir" ;;
     *)       return 1 ;;
   esac
 }
@@ -168,16 +170,17 @@ case "$cmd" in
     ;;
 
   set)
-    roadmap=""; task=""; template=""; template_seen=0; scope=""; usenotion=""
+    roadmap=""; task=""; template=""; template_seen=0; scope=""; usenotion=""; skillsdir=""
     project=""; have_project=0
     while [ $# -gt 0 ]; do
       case "$1" in
-        --roadmap-db|--task-db|--task-template|--require-scope|--use-notion)
+        --roadmap-db|--task-db|--task-template|--require-scope|--use-notion|--skills-dir)
           flag="$1"; shift
           [ $# -gt 0 ] || die "$flag needs a value" 2
           case "$1" in -*) die "$flag needs a value, got '$1'" 2 ;; esac
           case "$flag" in
             --roadmap-db) roadmap="$1" ;;
+            --skills-dir) skillsdir="$1" ;;
             --task-db) task="$1" ;;
             --task-template) template="$1"; template_seen=1 ;;
             --require-scope)
@@ -195,6 +198,7 @@ case "$cmd" in
           esac
           ;;
         --roadmap-db=*)    roadmap="${1#--roadmap-db=}" ;;
+        --skills-dir=*)    skillsdir="${1#--skills-dir=}" ;;
         --task-db=*)       task="${1#--task-db=}" ;;
         --task-template=*) template="${1#--task-template=}"; template_seen=1 ;;
         --require-scope=*)
@@ -223,7 +227,7 @@ case "$cmd" in
     # No flag is individually required any more: a repo may configure the
     # commits capability without ever supplying a Notion database. But a set
     # with nothing to set is a usage error, not a no-op write.
-    [ -n "$roadmap$task$template$scope$usenotion" ] || [ "$template_seen" -eq 1 ] \
+    [ -n "$roadmap$task$template$scope$usenotion$skillsdir" ] || [ "$template_seen" -eq 1 ] \
       || die "set needs at least one flag" 2
 
     # --use-notion false and a database id contradict each other, and silently
@@ -232,6 +236,13 @@ case "$cmd" in
     if [ "$usenotion" = "false" ] && [ -n "$roadmap$task$template" ]; then
       die "--use-notion false cannot be combined with a database or template id" 2
     fi
+
+    # The sync script copies from this path inside the repo, so a path that
+    # leaves it is refused here rather than stored and trusted later.
+    case "$skillsdir" in
+      /*|..|../*|*/..|*/../*|.|./) die "--skills-dir must be a path inside the repo, got '$skillsdir'" 2 ;;
+    esac
+    skillsdir="${skillsdir%/}"
 
     command -v jq >/dev/null || die "jq is required"
     migrate_legacy
@@ -251,7 +262,7 @@ case "$cmd" in
     # sets useNotion true. Otherwise a repo could hold both a roadmapDb and
     # useNotion false, and every reader would have to decide which one wins.
     jq --arg p "$project" --arg r "$roadmap" --arg k "$task" --arg tpl "$template" \
-       --arg scope "$scope" --arg usenotion "$usenotion" \
+       --arg scope "$scope" --arg usenotion "$usenotion" --arg sdir "$skillsdir" \
        --argjson tplseen "$template_seen" \
        --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
        '(.[$p] //= {})
@@ -264,6 +275,7 @@ case "$cmd" in
         | (if ($usenotion | length) > 0 then .[$p].useNotion = ($usenotion == "true")
            elif ($r | length) > 0 or ($k | length) > 0 then .[$p].useNotion = true
            else . end)
+        | (if ($sdir | length) > 0 then .[$p].skillsDir = $sdir else . end)
         | .[$p].updatedAt = $t' "$file" > "$tmp" || die "failed to build the new config"
     chmod 600 "$tmp" 2>/dev/null || true
     mv "$tmp" "$file" || die "failed to write $file"
