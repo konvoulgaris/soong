@@ -4,5 +4,5 @@
   },
   "description": "Reusable software engineering workflows for Claude Code and Codex.",
   "name": "soong",
-  "version": "0.21.0"
+  "version": "0.22.0"
 }

@@ -6,5 +6,5 @@
   "hooks": "./hooks/hooks.codex.json",
   "name": "soong",
   "skills": "./skills/",
-  "version": "0.21.0"
+  "version": "0.22.0"
 }
