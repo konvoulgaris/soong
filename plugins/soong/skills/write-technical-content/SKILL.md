@@ -5,8 +5,6 @@ description: Applies ASD-STE100 Simplified Technical English to technical docume
 
 # write-technical-content
 
-Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
-
 Rules for writing technical documentation, derived from ASD-STE100 Simplified
 Technical English and adapted for software.
 

@@ -12,6 +12,6 @@ across projects.
 
 ## Versioning
 
-* Bump the `version` in `plugins/soong/plugin.json` for every change.
+* Bump the `version` in `plugins/soong/.claude-plugin/plugin.json` for every change.
 * Features bump the minor version (`0.X.0`).
 * Fixes bump the patch version (`0.x.Y`).

@@ -9,7 +9,7 @@ scientist who created the android Data.
 
 ## Installation
 
-This repo is a plugin marketplace for Claude Code and Codex.
+This repo is a plugin marketplace for Claude Code.
 Authenticate to the private repository with `gh` or Git.
 Install Soong in Claude Code:
 
@@ -33,7 +33,7 @@ them:
 
 ## Principles
 
-With session hooks enabled and trusted, soong loads standing engineering principles: DRY, minimalism, the Unix philosophy, the rule of least power,
+soong loads standing engineering principles: DRY, minimalism, the Unix philosophy, the rule of least power,
 RISC, worse is better, YAGNI, no chartjunk, the Arch and Slackware preference
 for explicit machinery over magic, and respect for the idiom already in the
 code.
@@ -53,92 +53,12 @@ Not required, but they pair well with soong:
   and debugging workflows. soong's guard keeps its specs and plans in
   `docs/superpowers/` out of your commits.
 
-## Codex
+## Hooks
 
-Soong also provides a Codex marketplace and plugin manifest. The skills are
-shared with Claude Code.
-
-Add this repository as a marketplace:
-
-```sh
-codex plugin marketplace add konvoulgaris/soong
-```
-
-For a local checkout, run this command from the repository root:
-
-```sh
-codex plugin marketplace add .
-```
-
-Open the Plugins Directory in the desktop app. Select the Soong marketplace and
-install Soong. Authenticate to the private repository with `gh` or Git first.
-Restart the app after changing a local plugin. The installer uses a cached copy;
-regenerating repository files does not refresh an installed copy.
-
-The Codex catalog follows the official [plugin and marketplace format](https://developers.openai.com/plugins/build/plugins).
-
-## Keep agent configuration in sync
-
-Install Bash 3.2 or later and jq 1.6 or later. Edit these authoritative files:
-
-- `CLAUDE.md`: authoritative repository instructions.
-- `plugins/soong/plugin.json`: plugin identity, version, and metadata.
-- `plugins/soong/hooks/hooks.json`: Claude hook definitions.
-
-Edit shared skills, agent procedures, scripts, and references in
-`plugins/soong/`. These files are used directly by both hosts.
-
-Regenerate host configuration:
-
-```sh
-bash scripts/sync-agent-configs.sh
-```
-
-Check for drift without writing files:
-
-```sh
-bash scripts/sync-agent-configs.sh --check
-```
-
-The script generates `AGENTS.md`, both marketplace catalogs, both host plugin
-manifests, and `plugins/soong/hooks/hooks.codex.json`. Do not edit generated files.
-Check mode returns 1 for drift or invalid sources and 2 for invalid arguments.
-The script works from any directory. It writes only repository-owned outputs.
-It does not change personal configuration, credentials, or installed caches.
-Run check mode in CI to detect uncommitted generated changes.
-
-## Share skills across agents
-
-`/create-cross-agent-skill` keeps one canonical skills directory per repo
-(`docs/skills` by default, recorded by `/soong-setup skills`) and mirrors it to
-`.claude/skills` for Claude Code and `.agents/skills` for Codex. Skills that
-already live in a mirror are moved into the canonical directory on request.
-
-```sh
-bash plugins/soong/skills/create-cross-agent-skill/scripts/sync-skills.sh docs/skills
-bash plugins/soong/skills/create-cross-agent-skill/scripts/sync-skills.sh --check docs/skills
-```
-
-Edit the canonical directory only. Run check mode in CI to detect stale mirrors.
-
-## Host differences
-
-Skills resolve scripts from their installed paths. The shared
-`plugins/soong/skills/soong-setup/reference/hosts.md` defines agent dispatch,
-branch prefixes, and worktree operations. Soong ships no named agents. The main
-agent runs every workflow itself, including `polish`, on both hosts. Subagent
-dispatch is for exploration and parallel work only. Read-only instructions
-require host tool restrictions for enforced access control.
-
-Both hosts read the same engineering principles. Codex's generated hook file
-includes the Bash convention guard, the Notion content reminder, and SessionStart
-principles. Codex users must review and trust hooks before execution, as described
-in the official [hook documentation](https://learn.chatgpt.com/docs/hooks).
-
-Codex excludes Claude's Skill matcher and brainstorming prompt reminder.
-Soong workflows use the installed worktree skill for isolation instead.
-Some tool paths bypass hooks. A successful configuration check does not prove
-hook execution or identical host behavior.
+Brainstorming runs without review stops. When a brainstorming skill is invoked,
+a hook tells the agent to ask its clarifying questions, then review the spec and
+plan itself, and execute the plan without asking: with subagents when the plan
+recommends them, inline otherwise.
 
 Run the full shell test suite:
 

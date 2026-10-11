@@ -23,6 +23,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/brainstorm-skill-worktree-first.sh\"",
             "statusMessage": "Enforcing worktree-first brainstorming"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/brainstorm-autonomous.sh\"",
+            "statusMessage": "Keeping brainstorming autonomous"
           }
         ]
       },
