@@ -5,8 +5,6 @@ description: Run a code review with autofix, then a simplification pass, then co
 
 # polish
 
-Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
-
 Review the changed code, fix what is broken, simplify what is left, then
 commit. You do the work yourself. Do not dispatch an agent.
 
@@ -62,7 +60,7 @@ every finding and do not ask for approval.
    leave the code alone and report it as not applied.
 
 4. **Verify.** Figure out how this repo verifies a build before running
-   anything. Look at AGENTS.md / CLAUDE.md / README, the build config, and
+   anything. Look at CLAUDE.md / README, the build config, and
    lockfiles. Prefer what the project documents. Checks can live as scripts
    beside the code, so look there too. When a caller already resolved the check,
    use it.

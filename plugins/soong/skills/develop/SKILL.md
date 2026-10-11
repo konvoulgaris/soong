@@ -5,8 +5,6 @@ description: Take a Notion roadmap item and build its whole task stack as stacke
 
 # develop
 
-Read [host operations](../soong-setup/reference/hosts.md) before running this workflow.
-
 Take a Notion roadmap item, walk every task on it in stack order, and land each
 one as its own reviewable pull request based on the previous task's branch.
 
@@ -40,11 +38,11 @@ The user answers questions once, up front. Then the stack builds unattended.
 
 Derive a task slug from its title: lowercase it, replace each run of
 non-alphanumeric characters with one hyphen, and remove edge hyphens.
-Use the branch prefix and worktree mechanism from the host operations reference.
+Branches use the `claude/<slug>` prefix. The worktree lives at
+`.claude/worktrees/develop-<roadmap-item-id>` under the main checkout.
 
 Record every derived branch name in the ledger before creating branches.
-Record the actual worktree path returned by the host. A resume reads both from
-the ledger, even when the active host differs from the host that started work.
+Record the worktree path. A resume reads both from the ledger.
 A retitled card must not rename an existing branch.
 
 ## First run
@@ -59,8 +57,8 @@ earlier step can stop for free.
 1. **Check configuration.** Run:
 
    ```bash
-   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" check notion
-   bash "$SOONG_PLUGIN_ROOT/skills/soong-setup/scripts/soong-setup.sh" get
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" check notion
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/soong-setup/scripts/soong-setup.sh" get
    ```
 
    `check notion` exit 0 continues to `get`, which reads the ids. Exit 3 means
@@ -123,8 +121,8 @@ earlier step can stop for free.
    Read the cards in subagents, not on the main thread. Every card body lands in
    context otherwise, and the only thing the rest of this run needs from a card is
    its gaps and the answers to them. Dispatch one read-only exploration agent per unskipped
-   task through the host mapping. Dispatch independent tasks before waiting,
-   within the host's concurrency limit. The cards do not depend on each other, so reading them
+   task with the Explore agent (`subagent_type: Explore`, `model: sonnet`).
+   Dispatch the independent agents together. The cards do not depend on each other, so reading them
    in sequence buys nothing.
 
    Give each agent one task's page id and the roadmap item id. The gaps are in the
@@ -158,7 +156,7 @@ earlier step can stop for free.
 
 5. **Create the worktree.** One worktree for the whole stack, off `main`.
 
-   Use the host operations reference to select the worktree mechanism.
+   Use `git worktree add` with the path from the Names section.
    Inspect attached worktrees and `git worktree list` before creating one.
    Reuse a matching stack worktree from an interrupted run and report the reuse.
    For a managed worktree, record the returned path rather than inventing one.

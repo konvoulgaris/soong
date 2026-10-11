@@ -2,7 +2,7 @@
   "author": {
     "name": "konvoulgaris"
   },
-  "description": "Reusable software engineering workflows for Claude Code and Codex.",
+  "description": "Reusable software engineering workflows.",
   "name": "soong",
-  "version": "0.23.0"
+  "version": "0.25.0"
 }
