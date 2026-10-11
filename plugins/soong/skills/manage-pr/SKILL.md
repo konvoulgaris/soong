@@ -9,6 +9,15 @@ Everything that touches a pull request: composing its title and description, and
 replying to reviewers on it. The plugin's PR-guard hook checks both, so getting
 these conventions right is what lets the `gh` command through.
 
+## Repo rules come first
+
+The repo may have its own PR rules: a project skill for pull requests,
+instructions in `CLAUDE.md`, a PR template, or a contributing guide. Check for
+them before composing or replying. When they conflict with this skill, the repo's
+rules win. Use the rest of this skill only where the repo says nothing. If the
+PR-guard hook denies a command that a repo rule requires, report the conflict to
+the user instead of working around either side.
+
 ## Which mode
 
 Read the reference file for the job at hand. Do not read both.
